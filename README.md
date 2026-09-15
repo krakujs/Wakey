@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Wakey
 
 > The AI teammate that wakes up when your errors do. It watches your services' logs, and the moment something breaks it opens a ticket, finds the root cause, and opens a pull request with a suggested fix — before your on-call engineer has finished reading the alert.
@@ -43,4 +45,11 @@ Document map:
 
 ## License
 
-Open source from day one (planned: Apache-2.0).
+Wakey is **open source under the Apache License 2.0** — see [`LICENSE`](LICENSE).
+
+- **Copyright**: © The Wakey Authors (project name/legal entity to be finalized with the branding check — see `docs/STATE.md` open decisions).
+- **What this covers**: all source code, documentation (including `docs/`), configuration examples, and the dashboard assets in this repository.
+- **Contributions** are licensed inbound-outbound under Apache-2.0; contributors certify authorship via **DCO sign-off** (`Signed-off-by` trailer on every commit — one line, no CLA paperwork). Details in [`CONTRIBUTING.md`](CONTRIBUTING.md) (added with the repo scaffold, task E1-T1).
+- **Third-party software** we build on is attributed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), auto-regenerated from dependency metadata at every release; dependency licenses incompatible with Apache-2.0 are rejected at review (see `docs/engineering-standards.md` §2).
+- **Source files** carry `SPDX-License-Identifier: Apache-2.0` headers, applied automatically by the scaffold tooling.
+- **Trademarks**: "Wakey" and its logo are not yet registered — usage follows the branding check. GitHub®, GitLab®, Docker®, and all other third-party product names in this repository are trademarks of their respective owners, used only to describe compatibility; no affiliation or endorsement is implied.

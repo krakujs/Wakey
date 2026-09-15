@@ -23,6 +23,7 @@ A task is **done** when **all** of the following hold:
 - **Errors**: typed exceptions per domain; never bare `except:`; external calls always with explicit timeout + bounded retries (idempotent where possible).
 - **Dependencies**: pinned, minimal; adding one requires justification in the PR body (what it does, why stdlib/existing deps don't, license check, last-commit recency).
 - **No secrets in code/tests/logs, ever.** Fixtures use synthetic generators from `tests/fixtures/`.
+- **License hygiene**: every source file carries `SPDX-License-Identifier: Apache-2.0` (header tooling wired in E1-T1); new dependencies pass a license-compatibility check (Apache-2.0-compatible only — GPL/AGPL/SSPL/unlicensed rejected); `THIRD-PARTY-NOTICES.md` is regenerated from installed metadata at every release (see distribution doc).
 
 ## 3. Testing strategy (test pyramid, enforced by CI)
 
