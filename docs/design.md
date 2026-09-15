@@ -413,17 +413,29 @@ Radii: xs 4px inline tags · sm 6px rows · **md 8px all CTAs and inputs (never 
 ### Forms
 **`text-input`** — surface-card, 44px, 8px radius; focus: 1px amber border + glow-dim ring. Validation errors: semantic-error text, never amber.
 
+### Interaction guardrails (binding — derived from ui-ux-pro-max audit)
+
+- **Focus visibility**: every interactive element (buttons, inputs, cards-as-links, autonomy dial segments, copy buttons) gets a visible focus state: `2px {colors.primary}` ring with 2px offset, plus `glow-dim` on dark surfaces. Keyboard nav order must match visual order.
+- **Touch targets**: 44×44px minimum hit area on all interactive elements (WCAG AAA / mobile). CTAs render at 40px visual height but extend their hit area to 44px via padding/pseudo-element; inputs are 44px. Never ship a sub-44px tap target on touch layouts.
+- **Cursor & hover**: `cursor-pointer` on every clickable; hover feedback = color/brightness/border transitions only, 150–300ms — **no scale transforms** (they shift layout), no instant state jumps.
+- **Loading states**: buttons disable during async ops (spinner inside, label retained); async panes reserve their space and show skeleton (`animate-pulse` on surface-card blocks) — never blank, never layout shift (no content jumping).
+- **z-index scale** (tokens, never arbitrary values): `z-10` dropdowns · `z-20` sticky nav · `z-30` popovers/tooltips · `z-40` modals · `z-50` toasts. Stacking contexts are understood, not fought with `z-[9999]`.
+- **Icons**: SVG only — Lucide or Heroicons for UI glyphs (24px viewBox, consistent sizing), Simple Icons for connector/brand logos (verified paths). **Never emoji as UI icons.**
+- **Contrast floor 4.5:1 for all text**: verified pairs — `body` on canvas ≈7.6:1 ✓, `muted` on canvas ≈5:1 ✓, `muted-soft` ≈2.6:1 ✗ → **muted-soft is restricted to decorative/disabled use, never readable text**. Status pills always pair color with a text label (color is never the only indicator).
+- **Prose measure**: marketing paragraphs cap at 65–75ch; minimum 16px body on mobile — `caption`/`code-sm` sizes are for labels and machine output only, never reading text.
+
 ### CTA / footer
 - **`cta-band-spotlight`** — pre-footer: display-lg + single primary CTA over a low amber glow. Copy voice: the quiet promise ("Sleep. Wakey won't.").
 - **`footer-dark`** — 5 columns (Product / Connectors / Self-host / Community / Company), body-sm; GitHub + Discord/Community links; "Apache-2.0 · self-hosted · your logs stay yours" line.
 
 ## Motion (Wakey addition — Composio left this open)
 
-- **Breathing status dot**: 2.4s ease-in-out infinite, opacity 0.5→1. Only on `WATCHING`/`WAKING` states.
-- **The wake moment**: when a demo pane transitions to "detected", the pulse spike and amber fill animate once over 300ms ease-out. Never looping.
-- **Pulse-strip traveler**: the amber marker moves stage-to-stage in ~400ms; the strip auto-plays once per viewport entry.
+- **Micro-interactions** (hover, copy feedback, dial switching): 150–300ms ease-out; transform/opacity only (never width/height); color/brightness feedback, never scale.
+- **Breathing status dot**: 2.4s ease-in-out infinite, opacity 0.5→1. Infinite animation is reserved exclusively for status/loading indicators (this is one) — decorative elements never loop.
+- **The wake moment**: pulse spike + amber fill animate **once**, 300ms ease-out. Never looping.
+- **Pulse-strip traveler**: the amber marker moves stage-to-stage in ~400ms — a narrative animation, not a micro-interaction; plays once per viewport entry.
 - **Glow**: static. Glows never pulse or rotate.
-- **`prefers-reduced-motion`**: all of the above collapse to static states; breathing dots become static pills. Mandatory, not optional.
+- **`prefers-reduced-motion`**: all of the above collapse to static states; breathing dots become static pills; skeletons remain (they're informational, and pause pulsing). Mandatory, not optional.
 
 ## Do's and don'ts
 
@@ -454,11 +466,11 @@ Radii: xs 4px inline tags · sm 6px rows · **md 8px all CTAs and inputs (never 
 | Desktop 1024–1280px | Full hero, 2×2 grid, connectors 4-up. |
 | Wide > 1280px | Content caps 1200px. |
 
-Touch targets ≥40px (CTAs 40px, inputs 44px). Glow persists at every breakpoint — it's the brand's night light.
+Touch targets: **44×44px hit areas** everywhere (CTAs render at 40px visual height with extended hit area; inputs 44px). Glow persists at every breakpoint — it's the brand's night light.
 
 ## Site blueprint (marketing site v1)
 
-1. **Nav** — wordmark + pulse dot, links, GitHub stars, Get started.
+1. **Nav** — wordmark + pulse dot, links, GitHub stars, Get started. Sticky, with the CTA visible at all scroll depths (landing best practice: sticky hero-placed CTA + deep CTA after the trust band).
 2. **Hero** — badge "open-source · self-hosted · no SDK"; H1: the night-watch promise; sub: the loop in one sentence; CTAs `Get started` / `View on GitHub`; **Night Watch Grid** with glow; below it, the pulse-strip captioned "log → ticket → RCA → fix → verified".
 3. **Proof strip** — connector cards (logs in from GCP, AWS, Azure, Docker, anything-with-a-webhook) + the no-SDK claim.
 4. **How it works** — 4 feature-cards: wakes up on real errors (fingerprint/dedup), correlates with your deploys, investigates like an engineer (RCA + confidence), proposes repro-first fixes. Each card shows a mini product artifact, not an illustration.
@@ -475,9 +487,29 @@ The self-hosted dashboard (WF-01 wizard, OPS-1) reuses this system with marketin
 
 1. One component per change; variants live inside `components:`.
 2. `{token.refs}` everywhere — never inline hex.
-3. Amber passes the "would a lighthouse lighthouse here?" test: if it's not where attention must land, it's gray.
-4. Every new component needs a dark-state and a reduced-motion story before merge.
+3. Amber passes the "would a lighthouse stand here?" test: if it's not where attention must land, it's gray.
+4. Every new component needs a dark-state, a focus-state, and a reduced-motion story before merge.
 5. Copy check: if a headline would fit any AI startup, rewrite it until only Wakey can say it.
+
+### Working with the ui-ux-pro-max skill (for agents implementing UI)
+
+`docs/design.md` is the source of truth for brand identity; the `ui-ux-pro-max` skill (at `~/.agents/skills/ui-ux-pro-max`) is the implementation-intelligence layer. Per page/build task:
+
+1. Run `search.py "<page keywords>" --design-system` for a fresh recommendation — **treat its palette/style as advisory only**; our brand tokens here always win (its generic slate+green palette has already been considered and rejected).
+2. Use domain searches for the craft: `--domain ux` (animation, loading, z-index, a11y), `--domain landing` (page structure), and `--stack <stack>` for implementation idioms once the stack is chosen.
+3. The **pre-delivery checklist** below gates every UI PR — it's also binding under `docs/engineering-standards.md` §1.
+
+### Pre-delivery checklist (gates every UI PR)
+
+- [ ] No emojis as icons — Lucide/Heroicons SVG set, consistent 24px viewBox; brand logos verified via Simple Icons
+- [ ] `cursor-pointer` on every clickable element
+- [ ] Hover/focus states: color/brightness transitions 150–300ms, no layout shift, visible amber focus ring
+- [ ] Text contrast ≥4.5:1 (muted-soft never used as readable text); color never the sole indicator
+- [ ] Touch hit areas ≥44×44px; responsive checked at 375 / 768 / 1024 / 1440px; no horizontal scroll
+- [ ] Async content: skeletons + reserved space; buttons disable while pending
+- [ ] z-index from the token scale only
+- [ ] `prefers-reduced-motion` respected (wake moment and breathing dots collapse to static)
+- [ ] No third-party CDN requests (fonts/assets self-hosted)
 
 ## Known gaps
 
