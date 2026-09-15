@@ -83,6 +83,7 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 - Tests: unit for logic, contract for adapters/clients, e2e for gates, eval bench for agent quality. No skipping flaky tests — fix or delete the flake.
 - Observability: structured logs (JSON, request IDs), Prometheus metrics for every workflow's key latencies/counts, audit log for autonomous actions.
 - Config: everything tunable lives in `wakey.yml` or env; no magic constants in code.
+- **Resource discipline** (founder requirement: least possible resources): budgets in NFR-6..8 are CI-enforced — event-driven (no busy loops), aggregate-don't-retain storage, lazy heavy imports, lean dependencies (install size *and* import cost justified), batched I/O, server-rendered frontend, LLM frugality (dedup-before-LLM, cheap-tier routing, cached responses). Any PR that regresses the nightly resource benchmark >20% does not merge. Full rules: `docs/engineering-standards.md` §8.
 - **AI is vendor-neutral by construction** (founder requirement: users can configure any AI tool): every LLM call flows through the model-router abstraction with named, user-defined profiles (WF-14 §B); no component may call a vendor SDK directly or hard-code a provider. The same openness applies to plugins (WF-14 §A): core must stay upgradeable under arbitrary plugin load.
 - Failure handling: every external call has a timeout, retry policy, and a defined degraded mode. The pipeline never dies because one component did (NFR-4).
 

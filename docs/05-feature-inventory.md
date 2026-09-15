@@ -204,6 +204,10 @@
 | NFR-3 | At-least-once ingest with dedup; no ticket loss on restart | P1 |
 | NFR-4 | Graceful degradation: LLM down/budget out → issues-only monitoring continues | P1 |
 | NFR-5 | Works with zero SDK instrumentation in the target service | P1 (identity) |
+| NFR-6 | **Resource budget** (CI-enforced, fail-on-regression): idle ≤120MB RSS & ≈0% CPU; steady state (5M events/day) on 1 vCPU/1GB: RSS ≤350MB, ingest p95 <50ms; boot-to-ready <5s; container image ≤200MB | P1 |
+| NFR-7 | **Disk discipline**: with default retention, steady-state growth ≤25MB/day (aggregated counters, not raw rows; compacted); full footprint stays under ~500MB | P1 |
+| NFR-8 | **Lean mode**: `resource_profile: lean` in `wakey.yml` — higher sampling thresholds, shorter retention, reduced agent concurrency, minimal dashboard refresh — targets Raspberry-Pi/small-VPS class hosts; `balanced` default, `full` for big estates | P2 |
+| NFR-9 | **Frontend lightness**: dashboard is server-rendered HTML + minimal vanilla JS (no heavy SPA framework); total page weight <2MB; usable over slow uplinks — the GUI must be as cheap as the backend | P1 |
 
 ---
 

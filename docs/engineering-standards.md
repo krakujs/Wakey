@@ -67,7 +67,21 @@ Releases: tagged semver, changelog auto-generated (Conventional Commits), images
 - State migrations: forward-only, tested from the previous release tag; rollback = restore backup + previous image (documented).
 - Support: latest minor gets fixes; breaking config changes only in majors, with deprecation warnings one minor ahead.
 
-## 8. Documentation standards
+## 8. Resource discipline (founder requirement: least possible resources)
+
+Wakey is a long-running watcher on someone's box — it must be a *good tenant*. Budgets live in NFR-6..8 (feature inventory §14) and are **CI-enforced**: a nightly resource benchmark (synthetic profiles: idle, lean, and 5M events/day steady-state) fails on >20% regression in RSS, CPU-seconds, disk growth, or boot time.
+
+Rules that deliver it:
+- **Event-driven, not polling**: zero busy loops; idle CPU ≈ 0 (timers only). Ingest is push-based; scheduled jobs coalesce.
+- **Aggregate, don't retain**: the fingerprint store keeps counters/windows, not raw rows; raw redacted events only within retention; a compaction job merges old windows.
+- **Lazy everything**: heavy imports (LLM clients, cloud SDKs, parsers) load on first use; boot imports have a budget (boot-to-ready <5s, NFR-6).
+- **Lean dependencies**: every dependency justifies install size *and* import cost; prefer stdlib; orjson in hot paths; no heavyweight frontend framework — server-rendered HTML + vanilla JS (NFR-9).
+- **Batch by default**: ingest writes, GitHub calls, and notification sends batch/coalesce; per-item work only when counts are small.
+- **LLM frugality**: the biggest running cost is AI — dedup-before-LLM (docs/04 C2), cheap-tier routing (RCA-7), response caching per fingerprint version, hard token ceilings per investigation.
+- **Lean mode** (NFR-8) trades breadth for footprint on small hosts; all profiles run in the nightly benchmark.
+- Fix-agent sandbox runs are on-demand only, capped, and deferred via queue when the host is under load.
+
+## 9. Documentation standards
 
 - Workflow specs are **behavioral contracts**: numbered steps, inputs/outputs, state writes, failure-mode tables, acceptance criteria. If code and spec disagree, either fix code or fix spec in the same PR — divergence is a bug.
 - Every user-facing feature has: what it does, how to configure it, what it costs (LLM/compute), how to turn it off.

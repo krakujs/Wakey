@@ -25,6 +25,7 @@
 | E2-T3 | Storage interface + SQLite implementation + forward-only migrations | OPS-5 | WF-11 §5 | All state ops through interface; migration from schema v1→v2 tested; SQLite WAL mode; single-writer safety | E2-T1 | M | todo |
 | E2-T4 | HTTP server skeleton: FastAPI app, `/healthz`, `/readyz`, `/metrics` scaffolding, structured JSON logging with request IDs | OPS-3, OPS-4 | WF-11 | Request ID propagates into all log lines of a request; /readyz reports dependency status | E2-T2 | M | todo |
 | E2-T5 | Internal queue + worker pool: bounded queues, backpressure, graceful shutdown drains in-flight work | NFR-3, ING-11 | WF-02 §7 | Load test: 1k events/s burst → zero loss, ordered per fingerprint, clean shutdown drains | E2-T4 | L | todo |
+| E2-T6 | **Resource budget harness**: nightly benchmark profiles (idle / lean / 5M-events steady-state) measuring RSS, CPU-seconds, disk growth, boot time — CI fails on >20% regression | NFR-6 | eng-standards §8 | Budgets asserted green at baseline; artificial +20% memory regression fails CI; report artifact published per run | E2-T5 | M | todo |
 
 ### E3 — Onboarding & GitHub integration
 
@@ -52,6 +53,7 @@
 | E4-T7 | Idempotency + replay-safe processing (event dedup by id) | ING-11, NFR-3 | WF-02 §7 | Duplicate delivery → processed exactly once (test: replay 2× → same single fingerprint count) | E2-T5 | M | todo |
 | E4-T8 | Trace/request-ID extraction into LogEvent | ING-13 | WF-02 §4 | Extracted IDs queryable in storage; redacted-safe | E4-T2 | S | todo |
 | E4-T9 | Dead-letter store + raw event retention policy (redacted) | ING-12 | WF-02 §8 | Retention window enforced; replay of dead-lettered batch reproduces same fingerprints | E4-T7 | M | todo |
+| E4-T10 | Ingest efficiency pass: batched writes, orjson hot path, lazy heavy imports, counters-not-rows aggregation, window compaction job | NFR-6, NFR-7 | eng-standards §8 | 5M events/day steady profile inside budget (RSS ≤350MB, ≤25MB/day disk) on reference box; compaction verified to bound growth | E2-T6, E4-T9 | M | todo |
 
 ### E5 — Detection & fingerprinting
 
@@ -137,6 +139,7 @@
 | E11-T5 | Postgres support behind storage interface + migration from SQLite | OPS-5 | WF-11 §7 | Data migration SQLite→Postgres verified; CI matrix covers both | E2-T3 | M | todo |
 | E11-T6 | Backup/restore tooling + runbook | OPS-6 | WF-11 §8 | Restore drill: backup → wipe → restore → doctor green | E2-T3 | M | todo |
 | E11-T7 | CLI core (`wakey`): lifecycle (start/stop/status/logs/doctor/open/setup-token), services & config, fingerprints, budgets/caps — per the WF-13 contract (JSON output, exit codes, `--yes` safety) | OPS-8 | WF-13 | First-run e2e: `start` → banner → `status` with zero prompts; non-TTY mutation without `--yes` refuses with dry-print (exit 2); JSON schema snapshots stable; parity test vs GUI actions | E2-T4, E3-T5 | M | todo |
+| E11-T8 | **Lean mode** + small-host story: `resource_profile` config (lean/balanced/full), Raspberry-Pi / small-VPS benchmark run, published reference numbers | NFR-8 | eng-standards §8 | Lean profile on 1GB/RPi-class host: idle ≤120MB, steady within budget; numbers published in docs; GUI refresh + agent concurrency scale down in lean | E2-T6, E11-T3 | M | todo |
 
 **GATE M3** after E10+E11 (+P1 polish): OSS launch checklist (README quickstart, examples dir, eval bench v0 published, SECURITY.md, first release `v1.0.0`).
 
@@ -230,6 +233,6 @@
 
 ## Counting & completeness check
 
-- P1: **71 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
-- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **G-gate (GitHub) certified at M0 and ≤14 days before any release** (execution-plan §2).
-- P2: 34 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3); P3: 19 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5). Total backlog: **124 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P1: **74 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
+- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **G-gate (GitHub) certified at M0 and ≤14 days before any release** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward.
+- P2: 34 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3); P3: 19 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5). Total backlog: **127 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
