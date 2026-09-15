@@ -3,6 +3,27 @@
 > Behavioral contract for tickets as GitHub issues. Features: TIK-1..6 · Tasks: E6-*. Summary: `docs/03-end-to-end-workflow.md` §B4.
 > **Forge note:** GitHub is the reference dialect; tickets are ForgePort-normalized (WF-15) — adapters map to GitLab/Gitea issues etc. with identical behavior.
 
+## Work-state machine & in-flight suppression (DET-14)
+
+Every fingerprint has exactly **one WorkState**, the single source of truth that the board (OPS-11), CLI (`wakey board`), and forge labels mirror. No dispatch may run against a fingerprint whose state is busy; occurrences during busy states only bump counters and add the throttled comment.
+
+```
+new ─▶ queued-rca ─▶ investigating ─▶ awaiting-human ─┐
+   │                                    (needs-human/  ├─▶ fixing ─▶ verifying ─▶ verified-closed
+   └─ observe-only ─▶ open                 digest/     │
+                                          config/infra)┘
+   any state ─▶ closed-auto|closed-human|dropped ─(recurrence)─▶ reopened
+   verified-closed/reopened + repeat failures ─▶ chronic (auto-fix locked)
+   open + silent ≥N days ─▶ archived (reopens cleanly)
+```
+
+In-flight suppression rules (the "never trigger twice for the same error" guarantee):
+1. **Single-writer**: one active work item per fingerprint, enforced by a DB row lock at dispatch; a second dispatch attempt is a no-op + metric.
+2. **Busy-state absorption**: in {queued-rca, investigating, fixing, verifying}, new occurrences increment counts and refresh "last seen" only (plus the throttled occurrence comment). No new RCA, no new PR — ever.
+3. **Escalation, not duplication**: severity jump while open reclassifies, bumps queue priority, and re-notifies per policy — the same ticket, same work item.
+4. **Retry, not re-trigger**: failed RCA/fix (provider, budget) schedules a retry on the *same* work item with backoff; only a human (`@wakey fix`) or the policy gate after state exit can start fresh work.
+5. Superseded/related fingerprints (DET-15) attach to the active work item instead of creating their own.
+
 ## Purpose & trigger
 
 On a wake signal (WF-03), create **one** GitHub issue per new fingerprint, keep it alive while the error lives, close it when the error is gone, reopen on regression. Tickets are the coordination point for RCA (WF-05) and fixes (WF-06).

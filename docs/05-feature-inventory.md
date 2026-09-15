@@ -61,6 +61,9 @@
 | DET-11 | Anomaly detection | Novel-message spikes (not just known error shapes) raise flags | P2 |
 | DET-12 | Environment scoping | Fingerprints scoped per environment (staging vs prod); staging-only rollout mode for adopting teams | P2 |
 | DET-13 | Runbook links | Attach runbooks/docs to fingerprints; RCA references them; suppression entries can point at "accepted known error" runbooks | P2 |
+| DET-14 | **Work-state machine & in-flight suppression** | One WorkState per fingerprint (`new → queued-rca → investigating → awaiting-human → fixing → verifying → verified-closed`, plus reopen/archive/chronic paths); **single-writer dispatch** — while work is in flight, occurrences never re-trigger RCA/fix, they only bump counts (the "never trigger twice for the same error" guarantee); severity jump = escalation not duplication; auto-archive of long-silent fingerprints. Spec: WF-04 | P1 |
+| DET-15 | Related-fingerprint linking | Near-duplicates (stack shifted after deploy) and same-root-cause families attach to one active work item — one investigation covers them all | P2 |
+| DET-16 | Cardinality explosion guard | Per-window cap on distinct fingerprints; overflow bucketed into a "long tail" summary ticket with top-K samples — a unique-error flood can't explode tickets or storage | P2 |
 
 ## 4. Ticketing (GitHub issues)
 
@@ -115,6 +118,7 @@
 | VER-3 | Rollback suggestion | Deploy-aware: "error rate +340% since 00047; last good 00046 — consider rollback while reviewing" | P1 |
 | VER-4 | One-shot-per-fingerprint guard | Never silently re-fixes the same fingerprint after an insufficient verdict without human ack | P1 |
 | VER-5 | Canary verification | Fix verified against a canary/staging environment before the PR is marked ready | P3 |
+| VER-6 | External-fix credit | Human fixes it without Wakey → watcher detects silence + merged commit touching the culprit path → closes as `fixed-externally`, crediting the commit | P2 |
 
 ## 8. Notifications & human routing
 
@@ -150,6 +154,7 @@
 | OPS-5 | Storage choice | SQLite (single box) ↔ Postgres (production) behind one interface | P1 |
 | OPS-6 | Backups & restore | Documented + tooling for state backup/restore | P2 |
 | OPS-7 | REST API | Everything the dashboard does, as an API | P2 |
+| OPS-11 | **Live incident board** | One board mapping **every error → its work item → live status**: kanban of WorkStates (new/investigating/awaiting-human/fixing/verifying/done) with per-card service, counts, age, owner, agent activity; dashboard page + `wakey board` CLI; SSE live updates. Everyone sees what is being worked on, at all times. Spec: WF-12/WF-04 | P1 (basic) / P2 (live) |
 | OPS-8 | CLI (`wakey`) | Terminal management with a scripting contract (`--output json`, stable exit codes 0/1/2/3/4, `--yes` safety, non-TTY safe). **P1 core**: start/stop/status/logs, doctor, services & config, fingerprints, budgets/caps, open. **P2 full**: replay, backup/restore, audit tail, remote API-key mode. Spec: WF-13 | P1 (core) / P2 (full) |
 | OPS-9 | Helm chart / k8s manifests | For teams running wakeyd on the same k8s as their services | P3 |
 | OPS-10 | High-availability mode | Multi-replica ingest with shared queue for large estates | P3 |

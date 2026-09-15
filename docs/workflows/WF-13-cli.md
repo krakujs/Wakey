@@ -46,6 +46,8 @@ wakey fps list [--service s] [--state new|open|suppressed|chronic] [--sev sev-hi
 wakey fp show <id>                      # counts, timeline, linked ticket/PR, RCA summary, cost
 wakey fp suppress <id> --for 7d --reason "accepted noise"   # same path as GUI/`@wakey drop` (DET-7)
 wakey fp wake <id>                      # test/manual wake: runs policy gate as if events arrived (dry)
+wakey board [--service s] [--watch]     # the live task board as a table: WorkState columns,
+                                        # one row per active fingerprint (OPS-11); --watch refreshes
 ```
 
 ### Operations (P1 core / P2 full)

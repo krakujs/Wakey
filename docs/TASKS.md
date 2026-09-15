@@ -75,6 +75,7 @@
 | E6-T2 | Live occurrence updates (throttled comments) | TIK-3 | WF-04 §3 | Burst → exactly 1 update/hour despite 10k events; content includes ×count | E6-T1 | S | todo |
 | E6-T3 | Auto-close on silence | TIK-4 | WF-04 §4 | Fingerprint silent past grace window → close comment with evidence; clock logic unit-tested (fake clock) | E6-T1 | S | todo |
 | E6-T4 | Regression reopen w/ reintroducing-commit range | TIK-5 | WF-04 §5 | fp returns after close → reopen (never new issue) + commit range; second reopen suppressed w/o human ack (VER-4 interplay) | E6-T3 | M | todo |
+| E6-T5 | **Work-state machine + in-flight suppression**: unified WorkState per fingerprint; single-writer dispatch lock; busy-state absorption (counts+comment only); severity escalation; auto-archive | DET-14 | WF-04 §0 | Concurrent dispatch attempts → exactly one active work item (lock test); bursts during investigating/fixing → zero new dispatches, counts bump (e2e); severity jump reclassifies same ticket; archive+clean reopen cycle (fake clock) | E6-T1 | M | todo |
 
 **GATE M0** after E6: run `tests/e2e/test_gate_m0.py` + real GCP demo; **G-gate certified** (GitHub contract + live sandbox + failure drills per `docs/execution-plan.md` §2); record evidence in STATE.md.
 
@@ -141,6 +142,7 @@
 | E11-T6 | Backup/restore tooling + runbook | OPS-6 | WF-11 §8 | Restore drill: backup → wipe → restore → doctor green | E2-T3 | M | todo |
 | E11-T7 | CLI core (`wakey`): lifecycle (start/stop/status/logs/doctor/open/setup-token), services & config, fingerprints, budgets/caps — per the WF-13 contract (JSON output, exit codes, `--yes` safety) | OPS-8 | WF-13 | First-run e2e: `start` → banner → `status` with zero prompts; non-TTY mutation without `--yes` refuses with dry-print (exit 2); JSON schema snapshots stable; parity test vs GUI actions | E2-T4, E3-T5 | M | todo |
 | E11-T8 | **Lean mode** + small-host story: `resource_profile` config (lean/balanced/full), Raspberry-Pi / small-VPS benchmark run, published reference numbers | NFR-8 | eng-standards §8 | Lean profile on 1GB/RPi-class host: idle ≤120MB, steady within budget; numbers published in docs; GUI refresh + agent concurrency scale down in lean | E2-T6, E11-T3 | M | todo |
+| E11-T9 | **Live incident board (basic)**: dashboard kanban of WorkStates + `wakey board` CLI table; aggregated on-load | OPS-11 | WF-12 p3, WF-04 §0 | Board renders all active fingerprints with correct WorkState (e2e vs fixture stream); card click-through to detail; CLI table parity with dashboard | E6-T5, E11-T1 | M | todo |
 
 **GATE M3** after E10+E11 (+P1 polish): OSS launch checklist (README quickstart, examples dir, eval bench v0 published, SECURITY.md, first release `v1.0.0`).
 
@@ -176,6 +178,10 @@
 | E12-T24 | Outbound webhooks | EXT-4 | S |
 | E12-T25 | GitHub Action (`wakey-action`) | EXT-2 | M |
 | E12-T26 | Onboarding: multi-repo batch + demo sandbox | ONB-9, ONB-10 | M |
+| E12-T27 | Related-fingerprint linking: near-duplicate/supersede detection, work-item families, cross-service causal links | DET-15 | L |
+| E12-T28 | Cardinality explosion guard: distinct-fingerprint caps, long-tail bucket ticket, top-K samples | DET-16 | M |
+| E12-T29 | External-fix credit: silence + culprit-commit correlation → `fixed-externally` close | VER-6 | S |
+| E12-T30 | Live board updates (SSE) + board filters/saved views | OPS-11 (live) | M |
 
 ## Phase P3 — Moat — coarse
 
@@ -247,6 +253,6 @@
 
 ## Counting & completeness check
 
-- P1: **76 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
-- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **Forge-gate (G-gate) certified at M0 and ≤14 days before any release, per supported forge** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward; **every gate has a local script** (`make gate-*`, E1-T7) and all testing is host-safe by default (eng-standards §3).
-- P2: 37 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3 + E17-T2..T4); P3: 21 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5 + E17-T5..T6). Total backlog: **134 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P1: **78 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
+- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **Forge-gate (G-gate) certified at M0 and ≤14 days before any release, per supported forge** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward; **every gate has a local script** (`make gate-*`, E1-T7) and all testing is host-safe by default (eng-standards §3). Edge cases are tracked in `docs/edge-cases.md` (EC-*).
+- P2: 41 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3 + E17-T2..T4); P3: 21 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5 + E17-T5..T6). Total backlog: **140 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
