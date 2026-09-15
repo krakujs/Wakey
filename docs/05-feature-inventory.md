@@ -143,14 +143,14 @@
 
 | ID | Feature | What it does | Phase |
 |---|---|---|---|
-| OPS-1 | Web dashboard | Services, fingerprints, open tickets/PRs, agent runs, spend, config health; setup lives here too | P1 |
+| OPS-1 | Web dashboard (GUI) | **Full GUI at server start**: console banner with dashboard URL + auto-open, one-time first-run setup token, setup wizard hosting, and 8 pages (overview, services, fingerprints, tickets/PRs mirror, agent runs & audit, system, settings) — the GUI manages and configures; GitHub remains the decision UI. Spec: WF-12 | P1 |
 | OPS-2 | Config hot reload | `wakey.yml` and dashboard changes apply without restart | P1 |
 | OPS-3 | Prometheus metrics | Ingest rates, fingerprints/h, time-to-ticket/RCA/PR, agent spend, error rates — `/metrics` | P1 |
 | OPS-4 | Health endpoints & self-watch | `/healthz`; Wakey ingests its own errors (dogfooding) | P1 |
 | OPS-5 | Storage choice | SQLite (single box) ↔ Postgres (production) behind one interface | P1 |
 | OPS-6 | Backups & restore | Documented + tooling for state backup/restore | P2 |
 | OPS-7 | REST API | Everything the dashboard does, as an API | P2 |
-| OPS-8 | CLI | `wakey` CLI: doctor, service add, fingerprint list, replay, config validate | P2 |
+| OPS-8 | CLI (`wakey`) | Terminal management with a scripting contract (`--output json`, stable exit codes 0/1/2/3/4, `--yes` safety, non-TTY safe). **P1 core**: start/stop/status/logs, doctor, services & config, fingerprints, budgets/caps, open. **P2 full**: replay, backup/restore, audit tail, remote API-key mode. Spec: WF-13 | P1 (core) / P2 (full) |
 | OPS-9 | Helm chart / k8s manifests | For teams running wakeyd on the same k8s as their services | P3 |
 | OPS-10 | High-availability mode | Multi-replica ingest with shared queue for large estates | P3 |
 

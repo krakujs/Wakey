@@ -26,7 +26,7 @@
 | `docs/05-feature-inventory.md` | **Canonical feature list (~70, IDs F-xx)** | When scope changes; all work references these IDs |
 | `docs/TASKS.md` | **Complete task backlog** — epics E1–E13, tasks with AC | Your work queue; update task statuses |
 | `docs/engineering-standards.md` | Definition of done, testing, CI, release, security bar | Before claiming any task "done" |
-| `docs/workflows/WF-01…WF-11.md` | **Exact behavioral specs per workflow** | Read before implementing anything in that area; update when behavior changes |
+| `docs/workflows/WF-01…WF-13.md` | **Exact behavioral specs per workflow** (WF-12 = dashboard GUI, WF-13 = CLI) | Read before implementing anything in that area; update when behavior changes |
 
 **Rule: no code without a spec.** If a workflow file or task doesn't describe the behavior you're about to implement, write the spec first, then code.
 

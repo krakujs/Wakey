@@ -128,12 +128,13 @@
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E11-T1 | Dashboard v1: services, fingerprints, tickets/PRs, agent runs, spend, config health; setup screens | OPS-1 | WF-11 §3 | Playwright smoke: register service→see fingerprint→see ticket link | E3-T5, E5-T2 | L | todo |
+| E11-T1 | Dashboard v1 (GUI): server-start banner + auto-open + first-run token; setup wizard hosting; overview/services/fingerprints/tickets-mirror/agent-runs/system/settings pages | OPS-1 | WF-12 | Playwright smoke: `compose up` → banner URL → token → register service → see fingerprint → ticket deep-link; first-run lock without token; guardrail actions audited | E3-T5, E5-T2 | L | todo |
 | E11-T2 | Config hot reload end-state (file watch + GitHub refetch) | OPS-2 | WF-11 §4 | Threshold change applied to next event ≤30s, no restart (e2e) | E3-T6 | S | todo |
 | E11-T3 | Prometheus metric set complete per eng-standards §5 | OPS-3 | WF-11 §5 | All named metrics exported; Grafana dashboard JSON shipped in repo | E2-T4 | M | todo |
 | E11-T4 | Self-watch: wakeyd ingests its own errors via loopback service | OPS-4 | WF-11 §6 | Seeded internal error appears as ticket in ops repo (e2e) | E4-T1 | S | todo |
 | E11-T5 | Postgres support behind storage interface + migration from SQLite | OPS-5 | WF-11 §7 | Data migration SQLite→Postgres verified; CI matrix covers both | E2-T3 | M | todo |
 | E11-T6 | Backup/restore tooling + runbook | OPS-6 | WF-11 §8 | Restore drill: backup → wipe → restore → doctor green | E2-T3 | M | todo |
+| E11-T7 | CLI core (`wakey`): lifecycle (start/stop/status/logs/doctor/open/setup-token), services & config, fingerprints, budgets/caps — per the WF-13 contract (JSON output, exit codes, `--yes` safety) | OPS-8 | WF-13 | First-run e2e: `start` → banner → `status` with zero prompts; non-TTY mutation without `--yes` refuses with dry-print (exit 2); JSON schema snapshots stable; parity test vs GUI actions | E2-T4, E3-T5 | M | todo |
 
 **GATE M3** after E10+E11 (+P1 polish): OSS launch checklist (README quickstart, examples dir, eval bench v0 published, SECURITY.md, first release `v1.0.0`).
 
@@ -203,6 +204,6 @@
 
 ## Counting & completeness check
 
-- P1: **69 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
+- P1: **70 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
 - Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5).
-- P2: 31 coarse tasks (E12 + E14-T1..T5); P3: 12 coarse tasks (E13 + E14-T6..T8). Total backlog: **112 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P2: 31 coarse tasks (E12 + E14-T1..T5); P3: 12 coarse tasks (E13 + E14-T6..T8). Total backlog: **113 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.

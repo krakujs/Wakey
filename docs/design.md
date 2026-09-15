@@ -483,6 +483,10 @@ Touch targets: **44×44px hit areas** everywhere (CTAs render at 40px visual hei
 
 The self-hosted dashboard (WF-01 wizard, OPS-1) reuses this system with marketing elements stripped: no glows except the service-status pulse; sidebar nav on canvas; services as feature-cards; fingerprint table as `fingerprint-row` list; ticket/PR mirrors as cards with `status-pill`, `confidence-meter`, `cost-chip`; the setup wizard is a full-screen surface-card sheet with the amber progress thread. Everything readable at 2am — this UI's real users are literally on call at night.
 
+**Page inventory & behaviors** are specced in [`docs/workflows/WF-12-dashboard-gui.md`](workflows/WF-12-dashboard-gui.md): the server-start banner + auto-open + one-time first-run token, the eight pages, cross-cutting rules (read-only GitHub mirrors, guardrail confirms, empty states, 375px on-call usability).
+
+**CLI & terminal voice (`wakey` — WF-13):** the brand extends to the terminal. The `wakey` CLI uses the same status-pill vocabulary as plain text (`WATCHING`, `WAKING`, `VERIFYING`), amber in color mode only for attention/action states, and `--no-color`/non-TTY output must lose zero information (status is always words, color is reinforcement). The **start banner is the brand's handshake**: minimal mono block — wordmark glyph, version, dashboard URL, one-time setup token, `wakey status` hint — printed when the server comes up. JetBrains Mono everywhere; ASCII tables aligned like an instrument panel, not a spreadsheet dump.
+
 ## Iteration guide
 
 1. One component per change; variants live inside `components:`.
