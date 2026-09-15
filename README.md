@@ -33,6 +33,7 @@ Document map:
 | [`docs/TASKS.md`](docs/TASKS.md) | Complete task backlog: E1–E13, 80+ tasks with acceptance criteria, dependencies, sizes |
 | [`docs/engineering-standards.md`](docs/engineering-standards.md) | The "production grade" bar: definition of done, testing, CI/CD, release, security checklist |
 | [`docs/workflows/`](docs/workflows/) | **11 behavioral specs** (WF-01…WF-11): exactly how each workflow must work, with failure modes and acceptance criteria |
+| [`docs/design.md`](docs/design.md) | Wakey design system: the "night watch" brand — tokens, components, motion, site blueprint, dashboard application |
 | [`docs/01-competitive-landscape.md`](docs/01-competitive-landscape.md) | Market research (Sep 2026) and the gap Wakey targets |
 | [`docs/02-mvp-plan.md`](docs/02-mvp-plan.md) | Architecture, tech stack, milestone overview |
 | [`docs/03-end-to-end-workflow.md`](docs/03-end-to-end-workflow.md) | Big-picture behavioral spec: setup journey + runtime loop narrative |

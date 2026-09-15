@@ -51,6 +51,7 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 | 2026-09-15 | Fix agent is repro-first; diff spot-check verifier | Biggest levers on fix quality/trust (docs/04 A1, A4) | Patch-only agent |
 | 2026-09-15 | **Planning-only mode until founder explicitly says to start development** — applies to all concurrent/future requests | Founder directive; plan everything before building | Starting E1 scaffold early (rejected) |
 | 2026-09-15 | **Local version control only — never push to GitHub or add any remote** | Founder directive; project stays private/local for now | Adding origin remote (rejected) |
+| 2026-09-15 | Design system adopted (docs/design.md): Composio-structured tokens, Wakey twist = "night watch" brand — blue-black canvas, scarce Signal Amber accent with dark-on-amber CTAs, Night Watch Grid signature, Pulse motif, product-native components (autonomy dial, confidence meter, status pills) | Founder: base UI on Composio design.md with our own twists; differentiation from blue/purple AI brands; amber scarcity mirrors product truth (light = action) | Keeping Composio blue (undifferentiated); green "pulse" accent (reads generic-healthy) |
 | 2026-09-15 | Never build: auto-merge, chat UI, heavy agent frameworks | Focus; auditability (docs/04 "Not doing") | — |
 
 ## Open decisions (blocking work — resolve before the listed epic)
