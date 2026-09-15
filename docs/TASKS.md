@@ -1,6 +1,7 @@
 # Wakey — Task Backlog (all tasks to build the product)
 
 > Authoritative work queue. Statuses: `todo / in-progress / review / done / blocked:<reason>`. Update statuses here as work progresses; epic roll-ups live in `docs/STATE.md`.
+> **Parallel execution:** tasks are scheduled in lanes & waves per `docs/execution-plan.md` §3. In parallel runs, agents do **not** edit this file — progress is tracked via commit trailers (`Task:` / `Lane:` / `Status:`) and the integrator updates statuses at wave merges.
 > Every task lists: **Features** (IDs from `docs/05-feature-inventory.md`), **Spec** (workflow file in `docs/workflows/` to read first — § numbers are indicative pointers, the workflow file is the contract), **AC** (acceptance criteria — each needs a test), **Deps**, **Size** (S ≤ half day, M ≤ 2 days, L ≤ a week of focused work).
 
 ## Phase P1 — MVP ("the loop")
@@ -36,6 +37,7 @@
 | E3-T5 | Setup wizard v1 + service registration: repo pick, service↔repo/path mapping, ingest key generation + rotation | ONB-2, ING-1 | WF-01 §5 | New service gets working ingest key in <2min; key rotation invalidates old within 60s | E2-T2, E3-T2 | L | todo |
 | E3-T6 | Per-repo `wakey.yml` fetch/validate/cache (hot reload) | ONB-5, ONB-6, OPS-2 | WF-01 §6 | Config edit on GitHub reflected ≤30s without restart; invalid config keeps last-good with dashboard warning | E2-T2, E3-T2 | M | todo |
 | E3-T7 | `wakey doctor`: synthetic error through real pipeline → test ticket → auto-close; env report | ONB-7 | WF-01 §8 | Fresh install passes doctor; failures pinpoint the broken stage (ingest/perm/LLM) with fix hint | E3-T5, E4-T1 | M | todo |
+| E3-T8 | **GitHub test harness & live sandbox suite** (the G-gate engine): recorded-fixture contract tests for every endpoint used; dedicated test org + App; live e2e (install→ticket→RCA→draft PR→commands→merge webhook→verdict); webhook forgery/replay/out-of-order tests; failure drills (revoked token, narrowed perms, deleted objects, rate-limit backoff); least-privilege assertion | — | execution-plan §2 | Contract suite runs on every PR; live suite runs nightly + on demand with `WAKEY_E2E_*` secrets and never trips secondary rate limits; every failure drill has an automated test; least-privilege test asserts client calls stay in declared perms | E3-T2, E3-T3 | L | todo |
 
 ### E4 — Ingestion & connectors
 
@@ -71,7 +73,7 @@
 | E6-T3 | Auto-close on silence | TIK-4 | WF-04 §4 | Fingerprint silent past grace window → close comment with evidence; clock logic unit-tested (fake clock) | E6-T1 | S | todo |
 | E6-T4 | Regression reopen w/ reintroducing-commit range | TIK-5 | WF-04 §5 | fp returns after close → reopen (never new issue) + commit range; second reopen suppressed w/o human ack (VER-4 interplay) | E6-T3 | M | todo |
 
-**GATE M0** after E6: run `tests/e2e/test_gate_m0.py` + real GCP demo; record evidence in STATE.md.
+**GATE M0** after E6: run `tests/e2e/test_gate_m0.py` + real GCP demo; **G-gate certified** (GitHub contract + live sandbox + failure drills per `docs/execution-plan.md` §2); record evidence in STATE.md.
 
 ### E7 — RCA agent
 
@@ -228,6 +230,6 @@
 
 ## Counting & completeness check
 
-- P1: **70 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
-- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5).
-- P2: 34 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3); P3: 19 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5). Total backlog: **123 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P1: **71 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
+- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **G-gate (GitHub) certified at M0 and ≤14 days before any release** (execution-plan §2).
+- P2: 34 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3); P3: 19 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5). Total backlog: **124 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.

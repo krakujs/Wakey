@@ -30,6 +30,7 @@ A task is **done** when **all** of the following hold:
 |---|---|---|---|
 | **Unit** | Fingerprinting, redaction, policy, classification logic, config — pure logic, fast (<10ms each) | `tests/unit/` | every PR |
 | **Contract** | Adapters & clients against recorded/simulated payloads: GCP Pub/Sub envelope, GitHub REST (recorded fixtures), webhook HMAC/OIDC verification | `tests/contract/` | every PR |
+| **GitHub live sandbox** | Real end-to-end against a dedicated test org + GitHub App (install → ticket → RCA → draft PR → commands → merge webhook → verdict); rate-limit/secondary-limit aware; failure drills (revoked token, narrowed perms, deleted objects, replay storms) | `tests/e2e_github/` | nightly + pre-release (G-gate, execution-plan §2) |
 | **E2E (gates)** | The four gate demos (SKILL.md §5) running the real pipeline with a fake GitHub and synthetic log streams; real-infra runs recorded manually in STATE.md at gate time | `tests/e2e/` | every PR (fake GitHub), at gates (real) |
 | **Security** | Redaction fuzz corpus (must catch: AWS/GCP keys, JWTs, cards, emails, private-key blocks), prompt-injection corpus (log payloads attempting instruction injection must not alter agent tool use) | `tests/security/` | every PR |
 | **Eval bench** | Agent quality: fixture repos with seeded bugs; measures repro-first success, patch-green rate, noise rate (PRs opened for non-bugs) | `eval/` | nightly + release; results published (ANA-4, EXT-5) |
@@ -39,8 +40,8 @@ A task is **done** when **all** of the following hold:
 ## 4. CI/CD pipeline (GitHub Actions)
 
 PR pipeline: `lint → typecheck → unit → contract → security → e2e(fake) → build image`. 
-Main: + nightly eval bench + performance benchmarks. 
-Releases: tagged semver, changelog auto-generated (Conventional Commits), images published with SBOM + provenance attestation, migration tested from previous tag.
+Main: + nightly eval bench + nightly **GitHub live sandbox suite** (gated by CI secret; PRs use fixtures only so rate limits are never spent on ordinary merges) + performance benchmarks. 
+Releases: tagged semver, changelog auto-generated (Conventional Commits), images published with SBOM + provenance attestation, migration tested from previous tag — and **no release tags without a G-gate certification ≤14 days old** (execution-plan §2, §5).
 
 ## 5. Observability requirements
 
@@ -61,6 +62,7 @@ Releases: tagged semver, changelog auto-generated (Conventional Commits), images
 ## 7. Release & versioning
 
 - Semver. `0.x` until M3 launch → `1.0.0`.
+- **Release checklist** (all required): G-gate certified live ≤14 days old · all M-gates evidenced · security review closed with no open highs · eval-bench numbers published · fresh-machine install drill done · docs current (README quickstart, WF specs, CHANGELOG, LICENSE).
 - Every behavior change ships with: changelog entry (auto from commits), migration notes if state schema changed, and an updated `wakey.yml` schema version with a documented upgrade path.
 - State migrations: forward-only, tested from the previous release tag; rollback = restore backup + previous image (documented).
 - Support: latest minor gets fixes; breaking config changes only in majors, with deprecation warnings one minor ahead.

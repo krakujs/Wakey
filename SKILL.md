@@ -24,7 +24,8 @@
 | `docs/03-end-to-end-workflow.md` | The big-picture behavioral spec | When a system-level behavior changes |
 | `docs/04-improvements.md` | Design decisions that differentiate Wakey | When adding/removing a design principle |
 | `docs/05-feature-inventory.md` | **Canonical feature list (~70, IDs F-xx)** | When scope changes; all work references these IDs |
-| `docs/TASKS.md` | **Complete task backlog** — epics E1–E13, tasks with AC | Your work queue; update task statuses |
+| `docs/TASKS.md` | **Complete task backlog** — epics E1–E16, tasks with AC | Your work queue; update task statuses |
+| `docs/execution-plan.md` | **Phases, parallel lanes, worktree protocol, G-gate (GitHub release bar)** | Read before claiming work in parallel runs; integrators live here |
 | `docs/engineering-standards.md` | Definition of done, testing, CI, release, security bar | Before claiming any task "done" |
 | `docs/workflows/WF-01…WF-14.md` | **Exact behavioral specs per workflow** (WF-12 = dashboard GUI, WF-13 = CLI, WF-14 = plugins & AI config) | Read before implementing anything in that area; update when behavior changes |
 
@@ -34,7 +35,7 @@
 
 0. **Check the mode in `docs/STATE.md`.** While it says **PLANNING-ONLY** (locked by the founder 2026-09-15): do **not** write, scaffold, or refactor production code — only plan, spec, review, and refine docs. Implementation begins only when the founder explicitly says to start development (and the mode line in STATE.md is updated in the same breath).
 1. **Read `docs/STATE.md`** — know the current phase, what's done, what's in flight, and open decisions.
-2. **Pick work from `docs/TASKS.md`** in dependency order (§5 here, and task `Deps:` columns). Never start a task whose dependencies aren't `done`.
+2. **Pick work from `docs/TASKS.md`** in dependency order (§5 here, and task `Deps:` columns). Never start a task whose dependencies aren't `done`. In parallel runs, claim within your **lane** and follow the **worktree protocol** (`docs/execution-plan.md` §3–4) — one worktree + branch per task, shared docs edited only by the integrator.
 3. **Read the workflow spec(s)** covering the task (`docs/workflows/WF-xx.md`) and the feature IDs it implements (`docs/05-feature-inventory.md`).
 4. **Plan → implement → test → document** per `docs/engineering-standards.md`.
 5. **Update the docs you changed behavior in** (workflow spec, feature inventory if scope moved).
@@ -65,7 +66,7 @@ E1 Foundation → E2 Core platform ─┬─→ E3 Onboarding/GitHub ─┐
                                      E12 (P2 GA breadth) → E13/E14 (P3 Moat & estate mgmt) → E15 (write-path, "Ponytail")
 ```
 
-**Gates are hard.** To pass a gate, run the gate's demo end-to-end on real infrastructure (not mocks), record the evidence in STATE.md, and confirm every feature the gate names is `done`:
+**Gates are hard.** To pass a gate, run the gate's demo end-to-end on real infrastructure (not mocks), record the evidence in STATE.md, and confirm every feature the gate names is `done`. **Every gate that touches GitHub-facing surface additionally requires G-gate certification** — the GitHub-integration quality bar (contract fixtures, live sandbox suite, webhook robustness, failure drills, least-privilege proof) defined in `docs/execution-plan.md` §2:
 
 - **M0**: real GCP error → deduplicated GitHub ticket with deploy correlation. Features: ONB-1..8, ING-1..4, 8, 11, 13, DET-1..6, 9, TIK-1..5.
 - **M1**: that ticket gains a classified RCA with confidence and evidence. Features: RCA-1..7.
@@ -109,3 +110,7 @@ Binding consequences for every agent working on this repo **now**, even though t
 - **Core interfaces stay source-plural.** Ingest (WF-02), the event model (E2-T1), and fingerprinting (WF-03) must never assume "runtime logs only." Code-writing events (diffs, commits, agent-session summaries) are a planned first-class source entering through the generic-webhook contract (ING-3). Any design that hard-codes log-ness into the spine is a defect.
 - **Attribution metadata is reserved.** Fingerprints already carry deploy correlation (DET-9); keep commit-level and session-level metadata first-class in the event model so write→runtime attribution (WPM-3) needs no schema break.
 - **Don't build ahead of the epic; don't architect around it either.** E15 starts after GA, but reviews of WF-02 / E2-T1 / E5-T2 must check this section.
+
+## 10. Parallel agents & worktrees (summary)
+
+Multiple agents work simultaneously via **lanes** (L-P platform/ops · L-G GitHub/interaction · L-D data/detection) with disjoint module ownership, scheduled in **waves** that end with an integrator merge. Each agent works in its own **git worktree** (`git worktree add ../wakey-wt/<name> -b agent/<name>/<task-id>-<slug> main`), one task per worktree, tracking progress via commit trailers (`Task:` / `Lane:` / `Status:`) instead of editing shared docs. Shared files (STATE.md, TASKS.md, pyproject) are updated only by the **integrator** at wave merges, which keep `main` green. Full rules: `docs/execution-plan.md` §3–4. Violations that matter: two agents in one worktree, editing shared docs in a lane, merging your own branch past CI.
