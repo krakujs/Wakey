@@ -26,7 +26,7 @@
 | `docs/05-feature-inventory.md` | **Canonical feature list (~70, IDs F-xx)** | When scope changes; all work references these IDs |
 | `docs/TASKS.md` | **Complete task backlog** — epics E1–E13, tasks with AC | Your work queue; update task statuses |
 | `docs/engineering-standards.md` | Definition of done, testing, CI, release, security bar | Before claiming any task "done" |
-| `docs/workflows/WF-01…WF-13.md` | **Exact behavioral specs per workflow** (WF-12 = dashboard GUI, WF-13 = CLI) | Read before implementing anything in that area; update when behavior changes |
+| `docs/workflows/WF-01…WF-14.md` | **Exact behavioral specs per workflow** (WF-12 = dashboard GUI, WF-13 = CLI, WF-14 = plugins & AI config) | Read before implementing anything in that area; update when behavior changes |
 
 **Rule: no code without a spec.** If a workflow file or task doesn't describe the behavior you're about to implement, write the spec first, then code.
 
@@ -82,6 +82,7 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 - Tests: unit for logic, contract for adapters/clients, e2e for gates, eval bench for agent quality. No skipping flaky tests — fix or delete the flake.
 - Observability: structured logs (JSON, request IDs), Prometheus metrics for every workflow's key latencies/counts, audit log for autonomous actions.
 - Config: everything tunable lives in `wakey.yml` or env; no magic constants in code.
+- **AI is vendor-neutral by construction** (founder requirement: users can configure any AI tool): every LLM call flows through the model-router abstraction with named, user-defined profiles (WF-14 §B); no component may call a vendor SDK directly or hard-code a provider. The same openness applies to plugins (WF-14 §A): core must stay upgradeable under arbitrary plugin load.
 - Failure handling: every external call has a timeout, retry policy, and a defined degraded mode. The pipeline never dies because one component did (NFR-4).
 
 ## 7. How to make decisions when specs conflict or run out

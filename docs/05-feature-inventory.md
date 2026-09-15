@@ -172,6 +172,11 @@
 | EXT-3 | MCP server | Expose fingerprints, RCAs, and repo state to any MCP client (Claude, Cursor) — Wakey as the production-context source for the team's other agents | P3 |
 | EXT-4 | Outbound webhooks | Wakey events (ticket, RCA, PR, verdict) to any consumer | P2 |
 | EXT-5 | Eval bench (open) | Fixture repos with seeded bugs + harness in the public repo; CI gate for agent quality; feeds ANA-4 | P1 |
+| EXT-6 | **Plugin runtime & SDK** | Users can add **any plugin**: manifest-declared (`wakey-plugin.yml`), installed from local path/git URL (registry later), sandboxed out-of-process with capability-based permissions, hot-loaded, crash-isolated (a broken plugin degrades only itself). Plugins add sources, enrichers, detectors, agent tools, notification targets, dashboard panels, CLI commands. Spec: WF-14 | P2 |
+| EXT-7 | Plugin points taxonomy | Stable extension points with conformance test kits: `source` / `enricher` / `detector` / `responder` (MCP agent tools) / `notifier` / `panel` / `command` — each with a documented capability set. Spec: WF-14 §A3 | P2 |
+| EXT-8 | **Bring-your-own-AI profiles** | Configure **any AI tool/model**: named profiles binding any provider (Anthropic, OpenAI, Google, Mistral, local Ollama/vLLM, any OpenAI-compatible endpoint or corporate gateway) to Wakey's task tiers (triage/RCA/fix/verify), with per-profile budgets, rate limits, health probes, and save-time validation. Swapping AI is config, not code — the model router (RCA-7) is the only vendor-speaking component. Spec: WF-14 §B | P2 |
+| EXT-9 | Agent-agnostic coding-tool support | The Ponytail plugin (WPM-1) speaks open standards (hooks/MCP/stdio), so **any AI coding tool** can integrate — the named four are defaults, everything else lands via the plugin SDK / community adapters. | P3 |
+| EXT-10 | Community plugin registry | Curated directory: signing, compatibility badges against wakey versions, eval-derived quality scores; `wakey plugins install <name>` resolves from the registry. | P3 |
 
 ## 13. Legacy estate management (the company layer)
 
@@ -219,8 +224,8 @@
 ## Phase summaries
 
 - **P1 MVP — the loop works**: ONB 1–8 · ING 1–4, 8, 11, 13 · DET 1–6, 9 · TIK 1–5 · RCA 1–7 · FIX 1–10 · VER 1–4 · SEC 1–5, 7 · OPS 1–5 · ANA 1 · EXT 5. Roughly 45 features; demo-able as "2am error → 9am human reads the answer, merges the fix."
-- **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration. **Plus the estate-management core: LEG-1 (EOL radar), LEG-2 (health register), LEG-3 (golden-master safety nets), LEG-5 (ownership/orphans), LEG-6 (data-layer signals)** — the features that make Wakey the tool for *managing* legacy portfolios, not just responding in them.
-- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems), and WPM-1..4 (write-path monitoring — the Ponytail plugin), which extends Wakey upstream of production.**
+- **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration. **Plus the estate-management core: LEG-1 (EOL radar), LEG-2 (health register), LEG-3 (golden-master safety nets), LEG-5 (ownership/orphans), LEG-6 (data-layer signals)** — the features that make Wakey the tool for *managing* legacy portfolios, not just responding in them. **Plus the extensibility layer: EXT-6/7 (plugin platform), EXT-8 (bring-your-own-AI).**
+- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems), WPM-1..4 (write-path monitoring — the Ponytail plugin), and EXT-9/10 (agent-agnostic standards, community registry).**
 
 ## Decisions this list needs from you
 

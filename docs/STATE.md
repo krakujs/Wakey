@@ -27,6 +27,8 @@
 | E12 | P2 GA breadth | todo | After M3 |
 | E13 | P3 Moat | todo | After GA |
 | E14 | Legacy estate management (LEG-*) | todo | P2 portion after M3; P3 portion after GA |
+| E15 | Write-path monitoring ("Ponytail", WPM-*) | todo | P3, after GA |
+| E16 | Plugin platform & BYO-AI (EXT-6..10) | todo | T1..T3 gate on M3 (GA); T4..T5 with E15 |
 
 ## Task detail
 
@@ -57,13 +59,13 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 | 2026-09-15 | Added legacy estate-management layer (LEG-1..8, §13 of feature inventory, epic E14): EOL radar, health register/risk scoring, golden-master safety nets, system atlas, ownership/orphan detection, data-layer signals, decommission assist, auto-postmortems | Founder asked what's missing for companies managing running legacy projects; incident loop alone doesn't manage a *portfolio* (aging runtimes, ownerless services, no tests, undocumented systems, retirement) | Narrower candidates folded in: change-freeze calendar (→ DET-8 extension), compliance evidence pack (→ SEC-5/LEG-8), license scanning (→ ING-9/LEG-1) |
 | 2026-09-15 | GUI + CLI specced as first-class P1 surfaces (WF-12, WF-13): dashboard at server start (banner → auto-open → one-time token → wizard), 8 pages, read-mostly (GitHub stays the decision UI); `wakey` CLI core moves from P2 to P1 with a scripting contract (JSON output, exit codes 0/1/2/3/4, `--yes` safety); CLI/GUI are two skins over one API — CLI deliberately has no incident-decision commands | Founder requirement: GUI on server start + CLI to manage; keeps SKILL invariant "GitHub decides" intact; scriptability is table stakes for server software | fat client / separate admin UI; CLI that can trigger fixes (violates trust model) |
 | 2026-09-15 | Write-path monitoring adopted as planned P3 direction — the **"Ponytail" plugin** (WPM-1..4, §15, epic E15): coding-agent/IDE plugin monitoring code as written, write-time risk checks, write→runtime attribution, PR-time gate. Binding rule (SKILL.md §9): event spine stays source-plural, attribution metadata reserved | Founder direction; moves Wakey upstream of production and pairs with the AI-codes-more/breaks-more market thesis | Treating it as a separate product (dilutes focus); blocking editors (wrong trust model) |
+| 2026-09-15 | **Extensibility as a core promise** (WF-14, EXT-6..10, epic E16): users can add any plugin (manifest + sandboxed, capability-scoped, crash-isolated; points: source/enricher/detector/responder/notifier/panel/command) and configure **any AI tool** (BYO-AI profiles binding any provider or OpenAI-compatible endpoint to task tiers; swap = config, never code). Binding rule (SKILL.md §6): AI is vendor-neutral by construction — only the model router speaks vendor protocols | Founder requirement: any plugin, any AI tool; openness is the moat (docs/01 thesis), and BYO-AI incl. local models doubles as the privacy story | Fixed vendor list; in-process plugins (crash-risk); blocking editors |
 | 2026-09-15 | Never build: auto-merge, chat UI, heavy agent frameworks | Focus; auditability (docs/04 "Not doing") | — |
 
 ## Open decisions (blocking work — resolve before the listed epic)
 
-| # | Decision | Blocks | Owner | Deadline |
-|---|---|---|---|---|
 | 5 | **Confirm "Ponytail"**: is it our codename for the write-path monitoring plugin (current assumption, SKILL.md §9 / §15 WPM-*), or an existing third-party product to integrate? | E15 (P3, not near-term) | founder | before E15 planning |
+| 6 | **Plugin sandbox technology**: out-of-process workers (subprocess/containers) vs WASM modules for EXT-6 — decide with a spike at E16 start | E16 | epic owner | before E16-T1 |
 | 1 | P1 connector trio confirmation: GCP + generic webhook + docker sidecar (ING-2/3/4 in, ING-5/6 deferred to P2) | E4 | founder | before E4 start |
 | 2 | Legacy language mix priority for traceback parsers (currently Py/Java/JS/PHP for P1) | E5 | founder | before E5 start |
 | 3 | Digest/approval mode (FIX-9) in P1 (current plan) or P2 | E8 | founder | before E8 start |

@@ -36,7 +36,7 @@
 | 4 | **Tickets & PRs** | Read-only mirror of open wakey issues/PRs per service with sync state; **deep links only** — review happens in GitHub. Shows digest-issue existence in digest mode (approvals stay in GitHub). |
 | 5 | **Agent runs & audit** | Investigation/fix run history: duration, model tier, tokens, cost, verdict; filterable. Audit-log viewer (read-only, hash-chain status line; export button P2). |
 | 6 | **System** | Degradation ladder state + reason, connector health (per-service ingest heartbeat), queue depths, retention/backup status, self-watch link. Surface for WF-11 evidence. |
-| 7 | **Settings** | LLM providers & routing table (cheap/strong/local endpoints — RCA-7/SEC-3), budgets & caps editors (SEC-7), redaction pattern management (SEC-1; every pattern edit re-runs the security corpus smoke set before save), data-dir/backup info, doctor re-run, `wakey setup-token` regeneration. P2 adds: RBAC (SEC-6), notification targets (NTF-1), retention/purge (SEC-8), REST API keys (OPS-7). |
+| 7 | **Settings** | LLM providers & AI profiles (any provider/endpoint, task routing, live spend — WF-14 §B), budgets & caps editors (SEC-7), redaction pattern management (SEC-1; every pattern edit re-runs the security corpus smoke set before save), plugin manager (list, permissions view, enable/disable, config forms — WF-14 §A), data-dir/backup info, doctor re-run, `wakey setup-token` regeneration. P2 adds: RBAC (SEC-6), notification targets (NTF-1), retention/purge (SEC-8), REST API keys (OPS-7). |
 
 ## Cross-cutting GUI rules
 

@@ -212,10 +212,22 @@
 
 *Gates on GA + SKILL.md §9 architecture reviews. Full AC written at epic start.*
 
+### E16 — Plugin platform & BYO-AI (coarse; spec WF-14)
+
+| ID | Task | Features | Phase | Size |
+|---|---|---|---|---|
+| E16-T1 | Plugin runtime: manifest, loader, sandbox (out-of-process, limits, egress allowlist), capability permissions, lifecycle + hot-load, crash isolation/circuit breakers | EXT-6 | P2 | L |
+| E16-T2 | Extension-point taxonomy + conformance test kits (source/enricher/detector/responder/notifier/panel/command) incl. redaction-preservation and injection suites | EXT-7 | P2 | L |
+| E16-T3 | BYO-AI profiles: provider adapters + OpenAI-compatible binding, task→profile routing surface, save-time probes, per-profile budgets/spend, GUI+CLI parity | EXT-8 | P2 | M |
+| E16-T4 | Agent-agnostic coding-tool standards (hooks/MCP/stdio) + community adapter path for WPM-1 | EXT-9 | P3 | M |
+| E16-T5 | Community registry: signing, compatibility badges, quality scores, `wakey plugins install <name>` | EXT-10 | P3 | M |
+
+*Gates: E16-T1..T3 on GA (M3); T4..T5 alongside E15. Full AC written at epic start.*
+
 ---
 
 ## Counting & completeness check
 
 - P1: **70 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
 - Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5).
-- P2: 31 coarse tasks (E12 + E14-T1..T5); P3: 17 coarse tasks (E13 + E14-T6..T8 + E15). Total backlog: **118 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P2: 34 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3); P3: 19 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5). Total backlog: **123 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
