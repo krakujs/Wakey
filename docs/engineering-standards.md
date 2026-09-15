@@ -81,7 +81,7 @@ Releases: tagged semver, changelog auto-generated (Conventional Commits), images
 ## 7. Release & versioning
 
 - Semver. `0.x` until M3 launch → `1.0.0`.
-- **Release checklist** (all required): G-gate certified live ≤14 days old · all M-gates evidenced · security review closed with no open highs · eval-bench numbers published · fresh-machine install drill done · docs current (README quickstart, WF specs, CHANGELOG, LICENSE).
+- **Release checklist** (all required): G-gate certified live ≤14 days old · all M-gates evidenced · security review closed with no open highs · eval-bench numbers published · fresh-machine install drill done · **README quickstart boots green (compose drift test)** · docs current (README quickstart, WF specs, CHANGELOG, LICENSE).
 - Every behavior change ships with: changelog entry (auto from commits), migration notes if state schema changed, and an updated `wakey.yml` schema version with a documented upgrade path.
 - State migrations: forward-only, tested from the previous release tag; rollback = restore backup + previous image (documented).
 - Support: latest minor gets fixes; breaking config changes only in majors, with deprecation warnings one minor ahead.

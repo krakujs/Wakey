@@ -14,7 +14,7 @@
 
 | ID | Feature | What it does | Phase |
 |---|---|---|---|
-| ONB-1 | One-command self-host install | `docker compose up` (SQLite mode) with a production Postgres path; single-binary later | P1 |
+| ONB-1 | One-command self-host install | `docker compose up` (SQLite mode) with a production Postgres path; single-binary later. **Public images**: ghcr.io + Docker Hub mirror, multi-arch, non-root, SBOM/provenance; README quickstart YAML kept byte-identical to the repo compose file (drift-tested). Spec: docs/distribution.md | P1 |
 | ONB-2 | Setup wizard | Web dashboard walks: host → GitHub → services → logs → verify | P1 |
 | ONB-3 | GitHub login (self-owned App) | User creates their own GitHub App from a pre-filled manifest; wakeyd stores only the install credential, encrypted. Per-repo consent, revocable | P1 |
 | ONB-4 | PAT fallback | Fine-grained PAT for early dev/air-gapped setups; documented as non-preferred | P1 |
