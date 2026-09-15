@@ -1,6 +1,7 @@
 # WF-07 — Review Loop, `@wakey` Commands & Autonomy Modes
 
 > Behavioral contract for human–agent interaction surface. Features: RCA-5, FIX-8/9, TIK-6 · Tasks: E7-T7, E8-T8/9, E3-T3. Summary: `docs/03-end-to-end-workflow.md` §B8.
+> **Forge note:** commands arrive via any supported forge's comment/reaction webhooks (WF-15); parsing, authorization, and semantics are adapter-independent.
 
 ## Purpose & trigger
 

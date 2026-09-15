@@ -10,7 +10,7 @@ AI coding agents are shipping more code than ever — and production errors are 
 
 ## What Wakey does
 
-1. **Connects to your GitHub repository** (GitHub App — install, select repos, done).
+1. **Connects to your repository host** — GitHub first (GitHub App: install, select repos, done); GitLab, Gitea/Forgejo and more via the ForgePort abstraction, plus a plugin point so *any* version-control system can be added.
 2. **Ingests logs from wherever the service runs** — GCP Cloud Logging, AWS CloudWatch, Azure Monitor, a generic webhook (Sentry, Datadog, Loki…), or bare `docker logs`. No SDK changes to your legacy code.
 3. **Wakes up on errors and vulnerabilities**: deduplicates them into fingerprints, and for anything significant **creates a ticket on its own** with the log context and the likely code-level cause.
 4. **Investigates root cause**: clones the repo, maps the failing code path, checks what changed recently (deploys, commits, PRs), and classifies the issue: *needs a code fix / config problem / infra problem / known noise*.

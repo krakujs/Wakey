@@ -1,6 +1,7 @@
 # WF-06 — Fix Generation (Fix Agent)
 
 > Behavioral contract for turning a confident RCA into a reviewable draft PR. Features: FIX-1..12, SEC-2/7 · Tasks: E8-*. Summary: `docs/03-end-to-end-workflow.md` §B6–B7.
+> **Forge note:** "PR" = ForgePort *fix proposal* (WF-15) — GitHub draft PR is the reference; GitLab Draft MR etc. behave identically. Wakey never merges on any forge.
 
 ## Purpose & trigger
 

@@ -1,6 +1,7 @@
 # WF-04 — Ticket Lifecycle (GitHub Issues)
 
 > Behavioral contract for tickets as GitHub issues. Features: TIK-1..6 · Tasks: E6-*. Summary: `docs/03-end-to-end-workflow.md` §B4.
+> **Forge note:** GitHub is the reference dialect; tickets are ForgePort-normalized (WF-15) — adapters map to GitLab/Gitea issues etc. with identical behavior.
 
 ## Purpose & trigger
 

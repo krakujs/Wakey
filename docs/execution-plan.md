@@ -15,9 +15,9 @@
 
 Rules: gates are hard (SKILL.md §5) — no gate, no next phase. Within a phase, lanes run in parallel (§3). A phase exits only when **all** its lanes are merged and CI is green on `main`.
 
-## 2. The G-gate — GitHub integration release bar
+## 2. Forge gates (G-gate) — VCS-integration release bar
 
-GitHub is not "an integration"; it is half the product (tickets, PRs, review loop, commands). Nothing ships — not an M-gate demo, not a release tag — while any GitHub-facing surface is under-tested. The G-gate is a checklist that must be **certified and recorded in `docs/STATE.md` (gates evidence log)** before M0, and **re-certified** (full live suite) within 14 days before any release tag:
+GitHub (and later any forge — GitLab, Gitea, … per WF-15) is not "an integration"; it is half the product (tickets, fix proposals, review loop, commands). Nothing ships while a **supported forge** is under-tested. The G-gate is a checklist applied **per forge**: certified for GitHub before M0, and for every additional forge before it ships; **re-certified (full live suite) within 14 days before any release tag**:
 
 1. **Contract suite** (every PR): recorded-fixture tests for *every* GitHub API call Wakey makes — app installation & token minting, issues (create/comment/label/close/reopen), draft PRs, webhook receive/verify. No endpoint without a fixture test; no fixture drift tolerated.
 2. **Live sandbox suite** (nightly + pre-release): a dedicated test GitHub org + App installs the real flow end-to-end: install → service add → synthetic error → ticket → RCA comment → draft PR → `@wakey` commands → merge webhook → post-merge verdict. Authenticated via CI secret (`WAKEY_E2E_*`); rate-limit-aware (the suite must not trip secondary limits).
@@ -35,7 +35,7 @@ Parallelism is safe because **lanes own disjoint modules**. An agent claims task
 | Lane | Owns (modules) | Epics / typical tasks | Max agents |
 |---|---|---|---|
 | **L-P — Platform & Ops** | repo scaffolding, `config/`, `models/`, `storage/`, server, `ops/`, CLI, dashboard, packaging, CI | E1, E2, E11, E10, E16, docs/site | 1–2 |
-| **L-G — GitHub & Interaction** | `github/`, `tickets/`, review-loop, agents' interaction surface, eval bench | E3, E6, E7-T7, E8-T5/T8/T9, E9, E12-T17/25 | 1–2 |
+| **L-G — Forge & Interaction** | `forge/` adapters (GitHub, GitLab, …), `tickets/`, review-loop, agents' interaction surface, eval bench | E3, E17-T1..T4, E6, E7-T7, E8-T5/T8/T9, E9, E12-T17/25 | 1–2 |
 | **L-D — Data & Detection** | `ingest/`, `fingerprints/`, `policy/`, connectors, redaction engine, agent brains (RCA/fix loops) | E4, E5, E7-T1..T6/T8, E8-T1..T4/T6/T7 | 1–2 |
 | **Integrator** | merges lanes into `main`, updates STATE.md/TASKS.md at wave boundaries, runs the wave CI | rotates; also the G-gate evidence recorder | 1 (can be a lane agent wearing the hat) |
 
@@ -96,7 +96,7 @@ Collect `Status: done` branches → merge in dependency order → run full CI �
 
 `v1.0.0` may be tagged only when:
 - [ ] All four M-gates passed with evidence in STATE.md;
-- [ ] **G-gate live suite certified ≤14 days before the tag** (§2);
+- [ ] **Forge-gate live suite certified ≤14 days before the tag for every shipped forge** (§2);
 - [ ] P1 + GA-scope lanes fully merged, CI green on `main`, eval bench numbers published;
 - [ ] Security review (E10-T6) closed with no open highs;
 - [ ] Fresh-machine install drill (docs + doctor) executed;

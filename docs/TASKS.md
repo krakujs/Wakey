@@ -229,10 +229,23 @@
 
 *Gates: E16-T1..T3 on GA (M3); T4..T5 alongside E15. Full AC written at epic start.*
 
+### E17 — Multi-forge support (coarse; spec WF-15)
+
+| ID | Task | Features | Phase | Size |
+|---|---|---|---|---|
+| E17-T1 | **ForgePort abstraction + GitHub adapter refactor**: normalized ticket/proposal/event interface; import-linter architecture test (forge SDKs only inside adapters); E3/E6/E8 compile against the port | FORGE-1 | **P1** | L |
+| E17-T2 | GitLab adapter: project/group access tokens (gitlab.com + self-managed, pinned API versions), issues, Draft MRs, award-emoji approvals, webhooks, comment commands; passes Forge-gate on both | FORGE-2 | P2 | L |
+| E17-T3 | `forge` extension point in the plugin SDK + Forge-gate conformance kit for community adapters | FORGE-3 | P2 | M |
+| E17-T4 | Onboarding forge parity: wizard forge step, per-forge doctor validation, least-privilege docs | FORGE-6 | P2 | S |
+| E17-T5 | Gitea / Forgejo adapter (natural pairing with self-hosted Wakey) | FORGE-4 | P3 | M |
+| E17-T6 | Bitbucket Cloud + Azure DevOps adapters (demand-driven) | FORGE-5 | P3 | L |
+
+*E17-T1 is P1 and blocks E6/E8: building the core loop directly on GitHub's API would make FORGE-1 a rewrite instead of a refactor. Gates: T1 at M0; T2..T4 on GA; T5..T6 in P3.*
+
 ---
 
 ## Counting & completeness check
 
-- P1: **74 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
-- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **G-gate (GitHub) certified at M0 and ≤14 days before any release** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward.
-- P2: 34 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3); P3: 19 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5). Total backlog: **127 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P1: **75 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
+- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **Forge-gate (G-gate) certified at M0 and ≤14 days before any release, per supported forge** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward.
+- P2: 37 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3 + E17-T2..T4); P3: 21 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5 + E17-T5..T6). Total backlog: **133 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.

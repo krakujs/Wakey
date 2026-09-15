@@ -178,6 +178,19 @@
 | EXT-9 | Agent-agnostic coding-tool support | The Ponytail plugin (WPM-1) speaks open standards (hooks/MCP/stdio), so **any AI coding tool** can integrate — the named four are defaults, everything else lands via the plugin SDK / community adapters. | P3 |
 | EXT-10 | Community plugin registry | Curated directory: signing, compatibility badges against wakey versions, eval-derived quality scores; `wakey plugins install <name>` resolves from the registry. | P3 |
 
+## 16. Multi-forge support (any version-control system)
+
+> **Founder requirement (2026-09-15):** Wakey must connect with **any GitLab / other VCS easily**. Design answer (WF-15): a **ForgePort abstraction** in the core — tickets, fix proposals, commands, and webhooks operate on normalized vocabulary; GitHub is the first adapter (reference dialect), GitLab the second (proves the abstraction), and further forges arrive through the plugin system's `forge` extension point. Binding rule (SKILL.md §6): nothing outside a forge adapter touches a forge API.
+
+| ID | Feature | What it does | Phase |
+|---|---|---|---|
+| FORGE-1 | **ForgePort abstraction + GitHub adapter** | The normalized ticket/proposal/event interface (WF-15) built in P1 with GitHub as the reference adapter — everything else (E6/E7/E8/E9) compiles against the port, so later forges are additive. Enforced by an import-linter architecture test. | P1 |
+| FORGE-2 | **GitLab adapter** (gitlab.com + self-managed) | Project/group access-token auth, issues, Draft MRs, award-emoji digest approvals, comment commands, per-project webhooks; self-managed base URL + pinned API versions; passes the Forge-gate on gitlab.com *and* a self-managed instance. | P2 |
+| FORGE-3 | `forge` plugin extension point | New forge adapters as plugins (WF-14 taxonomy grows a `forge` point) with the Forge-gate conformance kit — the "easily" in "connect any VCS easily." | P2 |
+| FORGE-4 | Gitea / Forgejo adapter | Self-hosted forge coverage (popular pairing with self-hosted Wakey). | P3 |
+| FORGE-5 | Bitbucket Cloud + Azure DevOps adapters | Enterprise forges, demand-driven. | P3 |
+| FORGE-6 | Onboarding forge parity | WF-01 wizard gains a forge step (App install vs token paste → scope validation → repo pick); doctor validates any forge end-to-end; per-forge least-privilege docs. | P2 |
+
 ## 13. Legacy estate management (the company layer)
 
 > The incident loop (§3–7) fixes *one broken service*; a company running legacy projects needs to manage a *portfolio*: aging foundations, unknown owners, missing tests, undocumented systems, services that should be retired. This section is Wakey's estate-management layer — the features that turn it from a responder into the system of record for "the state of our legacy." All IDs use the `LEG-` prefix.
@@ -228,8 +241,8 @@
 ## Phase summaries
 
 - **P1 MVP — the loop works**: ONB 1–8 · ING 1–4, 8, 11, 13 · DET 1–6, 9 · TIK 1–5 · RCA 1–7 · FIX 1–10 · VER 1–4 · SEC 1–5, 7 · OPS 1–5 · ANA 1 · EXT 5. Roughly 45 features; demo-able as "2am error → 9am human reads the answer, merges the fix."
-- **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration. **Plus the estate-management core: LEG-1 (EOL radar), LEG-2 (health register), LEG-3 (golden-master safety nets), LEG-5 (ownership/orphans), LEG-6 (data-layer signals)** — the features that make Wakey the tool for *managing* legacy portfolios, not just responding in them. **Plus the extensibility layer: EXT-6/7 (plugin platform), EXT-8 (bring-your-own-AI).**
-- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems), WPM-1..4 (write-path monitoring — the Ponytail plugin), and EXT-9/10 (agent-agnostic standards, community registry).**
+- **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration. **Plus the estate-management core: LEG-1 (EOL radar), LEG-2 (health register), LEG-3 (golden-master safety nets), LEG-5 (ownership/orphans), LEG-6 (data-layer signals)** — the features that make Wakey the tool for *managing* legacy portfolios, not just responding in them. **Plus the extensibility layer: EXT-6/7 (plugin platform), EXT-8 (bring-your-own-AI), and multi-forge: FORGE-2 (GitLab), FORGE-3 (forge plugin point), FORGE-6 (onboarding parity).**
+- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems), WPM-1..4 (write-path monitoring — the Ponytail plugin), and EXT-9/10 (agent-agnostic standards, community registry), plus FORGE-4/5 (Gitea/Forgejo, Bitbucket, Azure DevOps).**
 
 ## Decisions this list needs from you
 
