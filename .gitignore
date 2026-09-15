@@ -1,0 +1,23 @@
+# Local-only repo (founder directive 2026-09-15): no remote is configured.
+# Secrets and environment — never commit
+.env
+.env.*
+
+# Python (for when development starts)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# Node (dashboard tooling, when it starts)
+node_modules/
+
+# Tooling / unrelated
+.video_agent/
+.DS_Store
