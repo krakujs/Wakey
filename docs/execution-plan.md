@@ -101,3 +101,10 @@ Collect `Status: done` branches → merge in dependency order → run full CI �
 - [ ] Security review (E10-T6) closed with no open highs;
 - [ ] Fresh-machine install drill (docs + doctor) executed;
 - [ ] Docs complete: README quickstart, all WF specs current, CHANGELOG, LICENSE.
+
+## 6. Continuous cadence & safe local testing
+
+- **Continuous development**: waves roll back-to-back — the wave ritual (§4.5) ends with next-wave assignments, so lanes are never idle waiting for a phase to "officially" start. Quality work (bug board, flaky fixes, docs debt) is first-class wave work when feature tasks are blocked.
+- **Continuous testing**: commit → `make check` in the worktree; wave merge → full suite on `main`; nightly → resource benchmark + eval bench + forge live sandbox + mutation testing (engineering-standards §3). Nothing waits for a phase boundary to be tested.
+- **Every phase tested locally**: each M-gate has a script — `make gate-m0|m1|m2|m3` — that runs the gate's full verification on a developer machine (fake GitHub for daily runs; live forge sandbox when tokens are present). Phase exit = local gate script green + evidence recorded in STATE.md.
+- **The PC-safety contract**: all testing is resource-capped by default (`make test` cannot harm the host) — caps, containerized benchmarks, rate-limited load generators, and the three never-rules are defined in engineering-standards §3 ("Safe local testing") and are merge-blocking review criteria for any test/bench code.

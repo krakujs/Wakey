@@ -81,6 +81,8 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 - Dependencies: minimal, vetted, pinned; every new dependency justified in the PR description.
 - Every module: typed, docstring explaining *why* where non-obvious; no dead code merges.
 - Tests: unit for logic, contract for adapters/clients, e2e for gates, eval bench for agent quality. No skipping flaky tests — fix or delete the flake.
+- **Continuous quality, zero known bugs**: `make check` on every commit, full suite at every wave merge, nightly benchmark/eval/live-sandbox; every bug ships with its regression test and reopens its task; **no gate or phase exits with an open bug**; coverage floors (≥90% overall, ≥95% critical modules) are CI-enforced.
+- **Host-safe testing** (founder requirement: testing must never crash the PC): all tests/benchmarks run resource-capped by default — per-test timeouts, ≤4 parallel workers, containerized benchmarks with memory/CPU caps, rate-limited load generators. The three never-rules (never uncapped fork, never unbounded allocation, never metal load tests) are merge-blocking review criteria for test code. Every phase gate is runnable locally via `make gate-*`. Full rules: `docs/engineering-standards.md` §3.
 - Observability: structured logs (JSON, request IDs), Prometheus metrics for every workflow's key latencies/counts, audit log for autonomous actions.
 - Config: everything tunable lives in `wakey.yml` or env; no magic constants in code.
 - **Forge-neutral core** (founder requirement: connect with any GitLab / other VCS easily): tickets, fix proposals, commands, and webhooks flow through the **ForgePort** abstraction (WF-15) with GitHub as the first adapter; no module outside a forge adapter imports a forge SDK or calls a forge API — enforced by an import-linter architecture test. The G-gate generalizes to a per-forge gate.
@@ -102,6 +104,7 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 - Never merge or delete another agent's/work-stream's in-progress state in STATE.md — coordinate via the decisions log.
 - Never let docs and code diverge: if you change behavior, the spec changes in the same PR.
 - Never optimize latency/quality metrics by raising autonomy beyond the configured autonomy level.
+- **Never run uncapped tests or load on the host**: no fork/spawn without caps, no unbounded allocations, no metal load tests without container limits — a runaway benchmark must always die at its cap, never on the PC (eng-standards §3, host guardrails).
 
 ## 9. Planned direction: write-path monitoring (the "Ponytail" plugin)
 

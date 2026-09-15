@@ -15,6 +15,7 @@
 | E1-T3 | Docker packaging: Dockerfile (non-root, slim), docker-compose dev + prod profiles, healthchecks | ONB-1 | WF-11 | `docker compose up` starts wakeyd+DB, `/healthz` green, container runs as non-root | E1-T2 | S | todo |
 | E1-T4 | Conventional commits + changelog automation + release workflow (tag→image publish) | — | eng-standards §7 | Tagging `v0.1.0` publishes image + changelog entry automatically | E1-T2 | S | todo |
 | E1-T5 | Demo fixture service: intentionally buggy small API + log generators (JSON and plaintext modes) + synthetic secret-bearing log generator for security tests | EXT-5 | eng-standards §8 | Generators produce deterministic fixtures; security corpus includes ≥15 secret patterns that redaction must catch | E1-T1 | M | todo |
+| E1-T6 | **Safe test runner & local gate scripts**: `make check / test / bench / gate-m0..m3`; pytest-timeout + capped xdist (≤4 workers); containerized benchmarks with memory/CPU caps; rate-limited load generators; per-suite cost table | — | eng-standards §3 (host guardrails) | `make test` completes on the 8GB/4-core reference laptop within documented caps; load generator verified rate-limited (no fork-burst); benchmark container dies at its memory cap, host unaffected; every gate script runs locally end-to-end | E1-T2 | M | todo |
 
 ### E2 — Core platform
 
@@ -246,6 +247,6 @@
 
 ## Counting & completeness check
 
-- P1: **75 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
-- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **Forge-gate (G-gate) certified at M0 and ≤14 days before any release, per supported forge** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward.
-- P2: 37 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3 + E17-T2..T4); P3: 21 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5 + E17-T5..T6). Total backlog: **133 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P1: **76 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
+- Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5); **Forge-gate (G-gate) certified at M0 and ≤14 days before any release, per supported forge** (execution-plan §2); resource budgets (NFR-6..8) enforced by the E2-T6 nightly benchmark from Wave 1 onward; **every gate has a local script** (`make gate-*`, E1-T7) and all testing is host-safe by default (eng-standards §3).
+- P2: 37 coarse tasks (E12 + E14-T1..T5 + E16-T1..T3 + E17-T2..T4); P3: 21 coarse tasks (E13 + E14-T6..T8 + E15 + E16-T4..T5 + E17-T5..T6). Total backlog: **134 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
