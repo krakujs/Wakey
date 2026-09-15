@@ -19,7 +19,32 @@ A task is **done** when **all** of the following hold:
 
 - **Python 3.12+**, fully type-annotated (`mypy --strict` clean for `src/wakey/`), `ruff` clean (lint + format).
 - **Async-first**: no blocking I/O in async paths; CPU-bound work (fingerprinting) in workers via queue, not the request path.
-- **Structure**: `src/wakey/` monorepo — `ingest/`, `fingerprints/`, `policy/`, `tickets/`, `agents/`, `github/`, `security/`, `ops/`. One responsibility per module; module docstring states the *why*.
+- **Structure (canonical — this tree is authoritative; proposing a change means editing this section first):**
+
+```
+Wakey-ai/
+├── SKILL.md · README.md · LICENSE · THIRD-PARTY-NOTICES.md · docker-compose.yml
+├── src/wakey/
+│   ├── core/          # config, domain models, storage, queue, server bootstrap
+│   ├── ingest/        # ingest API, normalizers, adapters (gcp/, webhook/, docker/)
+│   ├── fingerprints/  # traceback parsers, fingerprint engine, stores
+│   ├── policy/        # thresholds, suppression, autonomy, budgets, work-state machine
+│   ├── tickets/       # ticket lifecycle, templates, labels
+│   ├── forge/         # ForgePort + adapters: github/, gitlab/ (each self-contained)
+│   ├── agents/        # rca/, fix/, model router, tool allowlists, verifier
+│   ├── security/      # redaction, credential store, audit log, injection defenses
+│   ├── notify/        # notification policies & targets
+│   ├── cli/           # wakey CLI
+│   └── web/           # dashboard backend + templates/static assets
+├── tests/             # unit/ contract/ e2e/ e2e_github/ security/ (mirrors src layout)
+├── eval/              # eval bench: fixture repos, seeded bugs, harness
+├── demo/              # demo fixture services + emit scripts (two-service demo)
+├── docs/              # numbered planning docs (01-…) + workflows/ (WF-…) + STATE/TASKS
+└── .github/workflows/ # CI
+```
+
+- **Craft discipline (senior-engineer bar):** one responsibility per module; modules ≈≤400 lines, functions ≈≤50 (guideline — exceed only with a written reason); names are explicit and pronounceable, no abbreviations unless domain-standard; no commented-out code, no dead code, no TODO without a task id, no dangling stubs — finish or remove; prefer a boring explicit solution to a clever abstraction (abstractions earn their place on third use); imports ordered and minimal; every module's docstring states its *why*.
+- **Documentation structure:** README is the index; planning docs are numbered by creation (`docs/01-…`), workflow specs are `WF-xx-slug.md`, and every doc is reachable from the README/SKILL doc map — no orphan files, no duplicate sources of truth (one topic, one home; cross-link, don't copy).
 - **Errors**: typed exceptions per domain; never bare `except:`; external calls always with explicit timeout + bounded retries (idempotent where possible).
 - **Dependencies**: pinned, minimal; adding one requires justification in the PR body (what it does, why stdlib/existing deps don't, license check, last-commit recency).
 - **No secrets in code/tests/logs, ever.** Fixtures use synthetic generators from `tests/fixtures/`.

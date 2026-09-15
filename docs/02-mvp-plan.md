@@ -65,7 +65,7 @@ Default on install: `triage`. `fix` is opt-in per repo. This directly encodes "n
 - **Worker**: simple asyncio queue → Postgres (SQLite mode for self-host single-box).
 - **GitHub**: GitHub App (install UX, granular perms) with PAT fallback for early dev.
 - **Fix engine**: own lean edit→test loop first (controllable, cheap); evaluate integrating OpenHands/SWE-agent as an alternative backend behind an interface once the loop is proven.
-- Repo layout (monorepo): `core/` (ingest, fingerprint, orchestrator) · `agent/` (RCA + fix) · `connectors/` · `docs/`.
+- Repo layout: **canonical structure defined in `docs/engineering-standards.md` §2** (src/wakey monorepo: core, ingest, fingerprints, policy, tickets, forge/, agents, security, notify, cli, web; tests/eval/demo/docs alongside) — that section wins over any older layout mentions.
 
 ## Milestones
 

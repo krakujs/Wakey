@@ -77,6 +77,7 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 
 ## 6. Engineering rules (summary — full version in `docs/engineering-standards.md`)
 
+- **Senior craft** (founder directive: work as a 10-year-experienced engineer; no messy code, everything well structured): write for the reader who maintains this in year three — small single-purpose modules, explicit names, boring solutions over clever ones, no dead code or dangling stubs, self-review before anything enters `review` status. If a file feels too big or a function needs a paragraph to explain, split it. Structure is defined, not improvised: canonical layout in `docs/engineering-standards.md` §2, doc map in §2 here.
 - Language: **Python 3.12+**; async-first; no blocking calls in request paths.
 - Dependencies: minimal, vetted, pinned; every new dependency justified in the PR description.
 - Every module: typed, docstring explaining *why* where non-obvious; no dead code merges.
