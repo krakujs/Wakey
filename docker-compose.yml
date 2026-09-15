@@ -1,0 +1,19 @@
+# Wakey dev/prod compose — SQLite mode by default (Postgres profile lands with E2-T3/OPS-5).
+# The public quickstart version of this file is docs/distribution.md §2.2 and
+# must stay byte-identical to this file's release variant (E1-T4 drift test).
+services:
+  wakey:
+    image: wakey:dev
+    build: .
+    container_name: wakey
+    restart: unless-stopped
+    ports:
+      - "8477:8477"
+    environment:
+      WAKEY_MASTER_KEY: ${WAKEY_MASTER_KEY:-}
+      WAKEY_PORT: 8477
+    volumes:
+      - wakey-data:/var/lib/wakey
+
+volumes:
+  wakey-data:

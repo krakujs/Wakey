@@ -4,16 +4,16 @@
 
 ## Current position
 
-- **Mode**: 🔒 **PLANNING-ONLY** — locked by the founder on 2026-09-15. **No production code, scaffolding, or implementation may be started until the founder explicitly says to start development.** Planning/refinement of docs is allowed and expected. (Skipped: E1 scaffold earlier in the session — per founder instruction, nothing gets built.)
-- **Phase**: Planning complete → **P1 build not started** (E1 is the first epic when the lock is lifted).
+- **Mode**: 🚧 **DEVELOPMENT** — unlocked by the founder on 2026-09-15 ("Start the development please"). Planning docs remain binding (SKILL.md §2); behavior changes still update specs in the same change.
+- **Phase**: **P0 — Foundation (Wave 0)** · active task: **E1-T1** (repo scaffold), L-P lane, single-agent (integrator) mode — worktree protocol applies when parallel agents join.
 - **Next gate**: M0 — "real GCP error → deduplicated GitHub ticket with deploy correlation" (see SKILL.md §5).
-- **Next recommended task** (when unlocked): E1-T1 (repo scaffold + CI), then E2-T1.
+- **Next up after E1-T1**: E1-T2 (CI), E1-T6 (safe test runner), then E2.
 
 ## Epic board
 
 | Epic | Name | Status | Notes |
 |---|---|---|---|
-| E1 | Foundation & repo hygiene | todo | First |
+| E1 | Foundation & repo hygiene | **in-progress** | E1-T1 review (local green); E1-T2/T3/T6 in-progress; rest todo |
 | E2 | Core platform (config/models/storage/server) | todo | After E1 |
 | E3 | Onboarding & GitHub integration | todo | After E2 |
 | E4 | Ingestion & connectors | todo | Parallel with E3 after E2 |
@@ -86,5 +86,7 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 - None. (Add rows as `R-<n>` with mitigation owner.)
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-15 — **Development started** (founder unlocked). Wave 0, E1-T1: repo scaffold per canonical tree (src/wakey 11 packages, pyproject w/ ruff+mypy-strict+pytest-timeout caps, SPDX header tooling, Makefile check/test, CONTRIBUTING/SECURITY/.env.example, CI workflow, Dockerfile+compose). Versions grounded against live PyPI (fastapi 0.141, pydantic 2.13, mypy 2.3, ruff 0.16). Local verification green: ruff format/check, mypy strict (13 files), pytest 2/2, headers-check, docker build+run at 149MB non-root. E1-T1 → review (CI execution pending remote); E1-T2/T3/T6 in-progress. Next: E2-T1..T4 (platform skeleton + server), then E1-T3 completion.
 
 - 2026-09-15 — Planning package complete: SKILL.md, engineering standards, task backlog (E1–E13), 11 workflow specs, feature inventory, competitive research. No code written (per founder: plan first).

@@ -1,7 +1,8 @@
 # Local-only repo (founder directive 2026-09-15): no remote is configured.
-# Secrets and environment — never commit
+# Secrets and environment — never commit (.env.example IS tracked)
 .env
 .env.*
+!.env.example
 
 # Python (for when development starts)
 __pycache__/
