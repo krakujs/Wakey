@@ -26,6 +26,7 @@
 | E11 | Operations | todo | Continuous from E2 |
 | E12 | P2 GA breadth | todo | After M3 |
 | E13 | P3 Moat | todo | After GA |
+| E14 | Legacy estate management (LEG-*) | todo | P2 portion after M3; P3 portion after GA |
 
 ## Task detail
 
@@ -53,6 +54,7 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 | 2026-09-15 | **Local version control only — never push to GitHub or add any remote** | Founder directive; project stays private/local for now | Adding origin remote (rejected) |
 | 2026-09-15 | Design system adopted (docs/design.md): Composio-structured tokens, Wakey twist = "night watch" brand — blue-black canvas, scarce Signal Amber accent with dark-on-amber CTAs, Night Watch Grid signature, Pulse motif, product-native components (autonomy dial, confidence meter, status pills) | Founder: base UI on Composio design.md with our own twists; differentiation from blue/purple AI brands; amber scarcity mirrors product truth (light = action) | Keeping Composio blue (undifferentiated); green "pulse" accent (reads generic-healthy) |
 | 2026-09-15 | ui-ux-pro-max skill adopted as the UI implementation-intelligence layer; its guardrails (44px touch targets, focus rings, z-index scale, loading states, SVG-only icons, 4.5:1 contrast) are binding in docs/design.md; its generic palette suggestion (slate+green) rejected — brand tokens win | Craft rules are objective and worth binding; palette is a brand decision already made | Adopting skill's slate+green design system |
+| 2026-09-15 | Added legacy estate-management layer (LEG-1..8, §13 of feature inventory, epic E14): EOL radar, health register/risk scoring, golden-master safety nets, system atlas, ownership/orphan detection, data-layer signals, decommission assist, auto-postmortems | Founder asked what's missing for companies managing running legacy projects; incident loop alone doesn't manage a *portfolio* (aging runtimes, ownerless services, no tests, undocumented systems, retirement) | Narrower candidates folded in: change-freeze calendar (→ DET-8 extension), compliance evidence pack (→ SEC-5/LEG-8), license scanning (→ ING-9/LEG-1) |
 | 2026-09-15 | Never build: auto-merge, chat UI, heavy agent frameworks | Focus; auditability (docs/04 "Not doing") | — |
 
 ## Open decisions (blocking work — resolve before the listed epic)

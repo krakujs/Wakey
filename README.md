@@ -38,7 +38,7 @@ Document map:
 | [`docs/02-mvp-plan.md`](docs/02-mvp-plan.md) | Architecture, tech stack, milestone overview |
 | [`docs/03-end-to-end-workflow.md`](docs/03-end-to-end-workflow.md) | Big-picture behavioral spec: setup journey + runtime loop narrative |
 | [`docs/04-improvements.md`](docs/04-improvements.md) | Design decisions that differentiate Wakey (repro-first fixes, approval-queue mode, …) |
-| [`docs/05-feature-inventory.md`](docs/05-feature-inventory.md) | Canonical feature list: ~70 features across MVP / GA / Moat, with referenceable IDs |
+| [`docs/05-feature-inventory.md`](docs/05-feature-inventory.md) | Canonical feature list: ~80 features across MVP / GA / Moat phases (incl. the legacy estate-management layer), with referenceable IDs |
 
 ## License
 

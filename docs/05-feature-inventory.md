@@ -173,7 +173,24 @@
 | EXT-4 | Outbound webhooks | Wakey events (ticket, RCA, PR, verdict) to any consumer | P2 |
 | EXT-5 | Eval bench (open) | Fixture repos with seeded bugs + harness in the public repo; CI gate for agent quality; feeds ANA-4 | P1 |
 
-## 13. Non-functional targets
+## 13. Legacy estate management (the company layer)
+
+> The incident loop (§3–7) fixes *one broken service*; a company running legacy projects needs to manage a *portfolio*: aging foundations, unknown owners, missing tests, undocumented systems, services that should be retired. This section is Wakey's estate-management layer — the features that turn it from a responder into the system of record for "the state of our legacy." All IDs use the `LEG-` prefix.
+
+| ID | Feature | What it does | Phase |
+|---|---|---|---|
+| LEG-1 | **EOL & lifecycle radar** | Maintains a per-service inventory of runtimes, frameworks, base images, and key dependencies (from repo manifests + log fingerprints — no SDK), watches end-of-life and security-support dates (Python 2.7, PHP 5.6, Java 8, Node 12, Postgres 9.x…), and wakes *before* things break: escalating advisories at EOL−90/−30/0 days, plus upgrade-path PRs (via the FIX pipeline) where a test suite exists. Distinct from ING-9 (CVE alerts for *current* deps) — this is the aging-foundation horizon. | P2 |
+| LEG-2 | **Legacy health register & risk scoring** | A per-service risk score computed from Wakey's own observations: chronic fingerprints (VER-4), error-budget burn trend, missing tests (FIX-7 signals), no tests + fix-blocked, ownerless (LEG-5), EOL runtime (LEG-1), last-deploy age, verification failures. Renders a continuously updated **health register** (dashboard + exportable report) that answers the management question "which of our 40 legacy services do we invest in first?" with evidence, not vibes. | P2 |
+| LEG-3 | **Golden-master safety-net generation** | The legacy killer is no test suite — FIX-7 correctly refuses to patch untested code. This feature creates the missing safety net: from observed production behavior (traffic shapes, request/response patterns in logs, endpoint behavior), Wakey generates **characterization (golden-master) tests** per service path, opens them as one reviewable PR, and re-runs them continuously. Effect: unlocks `fix` autonomy for test-less repos, and doubles as behavior-drift detection (a golden test going red without a deploy = silent change). | P2 |
+| LEG-4 | **Living system atlas** | Auto-generated, docs-as-code documentation of the estate, written to markdown in each repo (or a docs repo) and refreshed continuously: service inventory, dependency/interaction map (from trace IDs — complements RCA-8's runtime use), public endpoints, data stores touched, normal-behavior profiles (DET-10 baselines), ownership (LEG-5), health score (LEG-2). Legacy systems die from missing knowledge; the atlas is the onboarding/audit/compliance artifact Wakey produces as a *byproduct of watching*. | P3 |
+| LEG-5 | **Ownership registry & orphan detection** | CODEOWNERS-aware routing: tickets and notifications go to the owning team, escalation ladders when unacknowledged. And the legacy special: **orphan detection** — services still running and erroring in production with no owner, no CODEOWNERS entry, no deploys in N months are surfaced as a quarterly "orphan report" demanding a disposition (assign / adopt / schedule LEG-7). Feeds LEG-2 scoring. | P2 |
+| LEG-6 | **Data-layer signals** | Legacy's most common production pain is the database: slow queries, deadlocks, lock contention, connection-pool exhaustion, N+1 patterns — all visible in logs. Wakey parses DB-shaped fingerprints as a first-class class, correlates degradation with schema-migration deploy events ("regression since migration 0042"), and where testable, proposes fixes (index additions, query rewrites) through the standard FIX pipeline. | P2 |
+| LEG-7 | **Decommission assist** | Retirement is a first-class legacy operation. Wakey watches real traffic per service: zero-traffic streaks make a service a **sunset candidate** (with evidence), a checklist PR walks the decommission steps, and post-sunset **watch mode** monitors for anything that breaks *because* the service is gone (its fingerprints light up elsewhere) — with one-command rollback guidance. Ties into LEG-2 (declining-but-costly services) and LEG-4 (atlas updates on retirement). | P3 |
+| LEG-8 | **Auto-postmortem drafts** | When a ticket reaches a verdict (VER-2), Wakey assembles a draft postmortem from evidence it already holds: full timeline (first occurrence → ticket → RCA → PR → merge → verification), deploy correlation, RCA, cost chips, verification data — written to markdown, PR'd into the repo's `postmortems/` directory for the human to correct and own. Feeds org memory (RCA-9) and auditors; turns every incident into a durable artifact with zero extra toil. | P3 |
+
+**Relationships:** LEG-5 and LEG-1 feed LEG-2's score · LEG-3 unlocks FIX autonomy for untested repos · LEG-4 consumes RCA-8, DET-10, LEG-2, LEG-5 · LEG-7 outcomes update LEG-4 · LEG-8 consumes VER-2 + audit trail.
+
+## 14. Non-functional targets
 
 | ID | Target | Phase |
 |---|---|---|
@@ -188,8 +205,8 @@
 ## Phase summaries
 
 - **P1 MVP — the loop works**: ONB 1–8 · ING 1–4, 8, 11, 13 · DET 1–6, 9 · TIK 1–5 · RCA 1–7 · FIX 1–10 · VER 1–4 · SEC 1–5, 7 · OPS 1–5 · ANA 1 · EXT 5. Roughly 45 features; demo-able as "2am error → 9am human reads the answer, merges the fix."
-- **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration.
-- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server.
+- **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration. **Plus the estate-management core: LEG-1 (EOL radar), LEG-2 (health register), LEG-3 (golden-master safety nets), LEG-5 (ownership/orphans), LEG-6 (data-layer signals)** — the features that make Wakey the tool for *managing* legacy portfolios, not just responding in them.
+- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems).**
 
 ## Decisions this list needs from you
 

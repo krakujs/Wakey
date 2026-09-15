@@ -184,10 +184,25 @@
 | E13-T8 | External tracker sync (Jira/Linear) | TIK-7 |
 | E13-T9 | Helm chart + HA mode | OPS-9, OPS-10 |
 
+### E14 — Legacy estate management (P2/P3 coarse)
+
+| ID | Task | Features | Phase | Size |
+|---|---|---|---|---|
+| E14-T1 | EOL & lifecycle radar: manifest/runtime inventory, EOL data source + feed, escalation advisories, upgrade-path PRs | LEG-1 | P2 | L |
+| E14-T2 | Health register & risk scoring: factor model, scoring job, dashboard register + exportable report | LEG-2 | P2 | L |
+| E14-T3 | Golden-master safety nets: behavior capture → characterization test generation PR → continuous re-run + drift alerts; FIX-7 interlock (untested+golden-passing = fix-eligible) | LEG-3 | P2 | L |
+| E14-T4 | Ownership registry: CODEOWNERS ingestion, routing + escalation ladders, orphan detection scan + quarterly report | LEG-5 | P2 | M |
+| E14-T5 | Data-layer signals: DB-shaped fingerprint class, migration-drift correlation, fixable-index/query suggestions into FIX pipeline | LEG-6 | P2 | L |
+| E14-T6 | Living system atlas: atlas generator (inventory, trace-based map, baselines, ownership, health), markdown PRs, refresh loop | LEG-4 | P3 | L |
+| E14-T7 | Decommission assist: traffic-based sunset candidates, checklist PR, post-sunset watch mode + rollback guidance | LEG-7 | P3 | M |
+| E14-T8 | Auto-postmortems: verdict-triggered timeline assembly → markdown postmortem PR for human ownership | LEG-8 | P3 | M |
+
+*Detail rule (per SKILL.md): coarse here; full AC written in the epic-start planning pass. E14-T1..T5 gate on M3 (GA phase); T6..T8 on GA.*
+
 ---
 
 ## Counting & completeness check
 
 - P1: **69 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
 - Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5).
-- P2: 26 coarse tasks; P3: 9 coarse tasks. Total backlog: **104 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P2: 31 coarse tasks (E12 + E14-T1..T5); P3: 12 coarse tasks (E13 + E14-T6..T8). Total backlog: **112 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
