@@ -202,11 +202,25 @@
 
 ---
 
+## 15. Write-path monitoring — the Ponytail plugin (planned, P3)
+
+> **Founder direction (2026-09-15), codename "Ponytail" (name to confirm):** beyond watching running services, Wakey ships a plugin that monitors **code as it is written** — inside AI coding agents (Claude Code, Cursor, Codex, Copilot-style) and IDEs. This moves Wakey upstream of production: the fingerprints, incident history, and risk signals that power runtime response become write-time guardrails for the humans and agents writing the next bug. Architecturally this is an **event-source extension, not a new pipeline**: write-path events enter through the same ingest/fingerprint spine (WF-02/WF-03) via the generic-webhook contract. See SKILL.md §9 for the binding architectural rules.
+
+| ID | Feature | What it does | Phase |
+|---|---|---|---|
+| WPM-1 | Coding-agent & IDE plugin | Hooks/plugins for major coding agents and IDEs that stream write-path events — file diffs, commit events, agent-session summaries — to the service's ingest endpoint (ING-3 contract). Opt-in per repo; redaction applies at ingest (SEC-1); local-first: events go to *your* wakeyd, never to a vendor cloud. | P3 |
+| WPM-2 | Write-time risk checks | As code is written, the plugin asks wakeyd: does this change touch incident-prone files (chronic fingerprints, VER-4), paths with recent RCAs, untested modules (FIX-7 / LEG-3 signals), EOL APIs (LEG-1)? Surfaces **advisory** inline warnings to the agent or human — it never blocks the editor and never sends code anywhere except the self-hosted server. | P3 |
+| WPM-3 | Write→runtime attribution | Links production fingerprints to the commit and writing session that introduced them ("first-bad commit `a1b2c3d` — written in agent session #212, PR #482"). Closes the loop from author to incident; enriches RCA evidence (WF-05), the health register (LEG-2), and postmortems (LEG-8). Requires the attribution-metadata reservation in SKILL.md §9. | P3 |
+| WPM-4 | PR-time gate (no-plugin bridge) | The same risk checks run at PR time via the GitHub Action (EXT-2) — for repos whose authors aren't hooked in, the protection still exists at review time. | P3 |
+
+
+---
+
 ## Phase summaries
 
 - **P1 MVP — the loop works**: ONB 1–8 · ING 1–4, 8, 11, 13 · DET 1–6, 9 · TIK 1–5 · RCA 1–7 · FIX 1–10 · VER 1–4 · SEC 1–5, 7 · OPS 1–5 · ANA 1 · EXT 5. Roughly 45 features; demo-able as "2am error → 9am human reads the answer, merges the fix."
 - **P2 GA — strangers can adopt it**: the remaining connectors, notifications, environments/baselines, RBAC, API/CLI, templates, digest, impact reports, eval-published calibration. **Plus the estate-management core: LEG-1 (EOL radar), LEG-2 (health register), LEG-3 (golden-master safety nets), LEG-5 (ownership/orphans), LEG-6 (data-layer signals)** — the features that make Wakey the tool for *managing* legacy portfolios, not just responding in them.
-- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems).**
+- **P3 Moat — why enterprises pick us and stay**: cross-service causality, org memory, upstream-issue mode, on-call handoff with RCA, canary verification, multi-tenant, MCP server. **Plus LEG-4 (living system atlas), LEG-7 (decommission assist), LEG-8 (auto-postmortems), and WPM-1..4 (write-path monitoring — the Ponytail plugin), which extends Wakey upstream of production.**
 
 ## Decisions this list needs from you
 

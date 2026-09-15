@@ -62,7 +62,7 @@ E1 Foundation → E2 Core platform ─┬─→ E3 Onboarding/GitHub ─┐
                                                              ▼
                                      E10 Security hardening + E11 Operations ── GATE M3: OSS launch ready
                                                              ▼
-                                     E12 (P2 GA breadth) → E13 (P3 Moat)
+                                     E12 (P2 GA breadth) → E13/E14 (P3 Moat & estate mgmt) → E15 (write-path, "Ponytail")
 ```
 
 **Gates are hard.** To pass a gate, run the gate's demo end-to-end on real infrastructure (not mocks), record the evidence in STATE.md, and confirm every feature the gate names is `done`:
@@ -98,3 +98,13 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 - Never merge or delete another agent's/work-stream's in-progress state in STATE.md — coordinate via the decisions log.
 - Never let docs and code diverge: if you change behavior, the spec changes in the same PR.
 - Never optimize latency/quality metrics by raising autonomy beyond the configured autonomy level.
+
+## 9. Planned direction: write-path monitoring (the "Ponytail" plugin)
+
+Founder direction (2026-09-15): after the runtime loop ships, Wakey extends **upstream** — a plugin, codename **Ponytail** (name to be confirmed), that monitors **code as it is written** inside AI coding agents and IDEs, feeding the same fingerprint/risk spine that powers production response. Full spec: feature inventory §15 (WPM-1..4), epic E15 (P3).
+
+Binding consequences for every agent working on this repo **now**, even though the epic is future:
+
+- **Core interfaces stay source-plural.** Ingest (WF-02), the event model (E2-T1), and fingerprinting (WF-03) must never assume "runtime logs only." Code-writing events (diffs, commits, agent-session summaries) are a planned first-class source entering through the generic-webhook contract (ING-3). Any design that hard-codes log-ness into the spine is a defect.
+- **Attribution metadata is reserved.** Fingerprints already carry deploy correlation (DET-9); keep commit-level and session-level metadata first-class in the event model so write→runtime attribution (WPM-3) needs no schema break.
+- **Don't build ahead of the epic; don't architect around it either.** E15 starts after GA, but reviews of WF-02 / E2-T1 / E5-T2 must check this section.

@@ -200,10 +200,22 @@
 
 *Detail rule (per SKILL.md): coarse here; full AC written in the epic-start planning pass. E14-T1..T5 gate on M3 (GA phase); T6..T8 on GA.*
 
+### E15 — Write-path monitoring, "Ponytail" plugin (P3 coarse — see SKILL.md §9)
+
+| ID | Task | Features | Phase | Size |
+|---|---|---|---|---|
+| E15-T1 | Write-path event contract: agent/IDE event schema (diffs, commits, sessions), ingestion via ING-3 webhook, redaction pass, fingerprint spine compatibility | WPM-1 | P3 | M |
+| E15-T2 | Plugins for major coding agents & IDEs (Claude Code, Cursor, Codex, VS Code) — opt-in per repo, local-first delivery | WPM-1 | P3 | L |
+| E15-T3 | Write-time risk-check API + inline advisory UX (chronic paths, untested modules, EOL APIs; never editor-blocking) | WPM-2 | P3 | L |
+| E15-T4 | Write→runtime attribution: session/commit ↔ fingerprint linkage feeding RCA, LEG-2, LEG-8 | WPM-3 | P3 | M |
+| E15-T5 | PR-time gate bridge via wakey-action (EXT-2) | WPM-4 | P3 | S |
+
+*Gates on GA + SKILL.md §9 architecture reviews. Full AC written at epic start.*
+
 ---
 
 ## Counting & completeness check
 
 - P1: **70 tasks** across E1–E11 — every P1 feature from `docs/05-feature-inventory.md` is covered by ≥1 task (verified against the inventory's phase summaries).
 - Gate mapping: M0 = E1–E6 · M1 = E7 · M2 = E8–E9 · M3 = E10–E11 (SKILL.md §5).
-- P2: 31 coarse tasks (E12 + E14-T1..T5); P3: 12 coarse tasks (E13 + E14-T6..T8). Total backlog: **113 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
+- P2: 31 coarse tasks (E12 + E14-T1..T5); P3: 17 coarse tasks (E13 + E14-T6..T8 + E15). Total backlog: **118 tasks**. Detailed AC for P2/P3 is written when their epic starts (per SKILL.md session protocol), not now — detail rots.
