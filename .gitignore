@@ -25,3 +25,4 @@ node_modules/
 wakey-data/
 wakey-data/*.db-wal
 wakey-data/*.db-shm
+.coverage
