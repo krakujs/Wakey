@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 17) — doctor now exercises the live LLM RCA tier when WAKEY_LLM_* is configured (verified live: GLM classified the synthetic error). 118 tests green. History note: doctor wiring folded into b4f446b (message under-describes it); amend now banned in SKILL section 8. Development ≈ 55% of backlog tasks, ≈ 80% of P1 effort. Remaining: fix-proposal delivery wiring into ingest, verification watcher scheduling loop, GUI wizard/settings, M3 hardening, M0 GCP leg.
+
 - 2026-09-16 (cont. 16) — **LIVE RCA PASS**: real TypeError traceback -> GLM (z.ai anthropic-compatible endpoint) -> structured RCA: CLASS code-fix, confidence 0.75, correct root cause and evidence (demo/live_rca_check.py). M1 live gate core proven. 105 tests green (make check). Development ≈ 52% of backlog tasks, ≈ 75% of P1 effort. Remaining: pipeline wiring of live RCA + fix proposal delivery into the ingest flow, verification watcher scheduling, GUI wizard/settings, M3 hardening, M0 GCP leg (needs GCP log source).
 
 - 2026-09-16 (cont. 15) — **Live LLM tier unblocked**: GLM key migrated from Claude settings to .env on founder instruction (SKILL rule amended: founder-authorized migration allowed, key never printed/committed — git grep verified 0 tracked files). AnthropicCompatibleModel implemented; live ping PASS on glm-4.5-air via z.ai anthropic endpoint. Settings gained llm_* fields. 118 tests green. Development ≈ 50% of backlog tasks, ≈ 70% of P1 effort. Remaining: wire live model into RCA agent, GUI wizard/settings pages, M3 hardening, live GCP leg.
