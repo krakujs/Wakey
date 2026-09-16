@@ -79,3 +79,15 @@ def test_yaml_syntax_error_reports_line() -> None:
 def test_non_mapping_rejected() -> None:
     with pytest.raises(ConfigError):
         load_wakey_yaml("- just\n- a\n- list\n")
+
+
+def test_postgres_dsn_accepted() -> None:
+    settings = Settings.from_env(
+        {"WAKEY_DATABASE_URL": "postgresql://user:pw@db.example.com:5432/wakey"}
+    )
+    assert settings.database_url.startswith("postgresql://")
+
+
+def test_unknown_database_scheme_rejected() -> None:
+    with pytest.raises(ConfigError, match="not supported"):
+        Settings.from_env({"WAKEY_DATABASE_URL": "mysql://user:pw@db/x"})

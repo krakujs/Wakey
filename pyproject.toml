@@ -37,6 +37,8 @@ dependencies = [
 # Encrypted-at-rest credentials (GitHub App private keys, webhook secrets)
 # when WAKEY_MASTER_KEY is configured (SEC-4 / E10-T3):
 secrets = ["cryptography>=42,<47"]
+# Durable Postgres storage (OPS-5) — required in production deployments:
+postgres = ["psycopg[binary]>=3.1,<4"]
 dev = [
     "cryptography>=42,<47",
     "pytest>=8.3,<10.0",

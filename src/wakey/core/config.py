@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 MAX_REGEX_LENGTH = 500  # crude ReDoS surface bound; real guard lands with E10-T1
 
-_SUPPORTED_DATABASE_SCHEMES = ("sqlite", "")
+_SUPPORTED_DATABASE_SCHEMES = ("sqlite", "postgresql", "postgres", "")
 
 
 class ConfigError(Exception):

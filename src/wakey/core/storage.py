@@ -300,10 +300,6 @@ class Storage(ABC):
     def list_recent_deploys(self, service: str, limit: int = 10) -> list[DeployEvent]: ...
 
     @abstractmethod
-    def backup(self, dest: Path) -> None:
-        """Consistent online backup of the store (OPS-6)."""
-
-    @abstractmethod
     def prune_events(self, older_than: datetime) -> int:
         """Retention (R-14): delete log events older than the cutoff."""
 

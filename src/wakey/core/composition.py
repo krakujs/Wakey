@@ -26,7 +26,7 @@ from wakey.agents.rca import ModelRca, RcaBudget, RcaDispatcher
 from wakey.core.config import ConfigError, ServiceYaml, Settings, load_wakey_yaml
 from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import AuditEvent, Fingerprint, WorkState, utcnow
-from wakey.core.storage import SQLiteStorage
+from wakey.core.storage import SQLiteStorage, Storage
 from wakey.forge.github import GitHubAdapter, GitHubConfig
 from wakey.forge.port import ConsoleForge, ForgePort, TicketRef
 from wakey.ingest.pipeline import IngestPipeline
@@ -35,6 +35,7 @@ from wakey.policy.verification import WatchInputs
 from wakey.policy.watcher import VerificationWatcher, grace_inputs_from_storage
 from wakey.security.redaction import RedactionEngine
 from wakey.security.secretbox import SecretBox
+from wakey.storage.postgres import PostgresStorage
 from wakey.tickets import lifecycle as ticket_lifecycle
 from wakey.web.auth import AuthManager
 from wakey.web.commands import CommandDispatcher
@@ -47,7 +48,7 @@ class Components:
     """Everything the running service owns; the caller stops ``runtime``."""
 
     settings: Settings
-    storage: SQLiteStorage
+    storage: Storage
     metrics: MetricsRegistry
     forge: ForgePort
     redactor: RedactionEngine
@@ -157,7 +158,7 @@ def build_model_rca(settings: Settings, redactor: RedactionEngine) -> ModelRca |
     return ModelRca(model, redactor)
 
 
-def _stored_config(storage: SQLiteStorage, service: str) -> ServiceYaml:
+def _stored_config(storage: Storage, service: str) -> ServiceYaml:
     stored = storage.get_service(service)
     if stored is None:
         return ServiceYaml()
@@ -168,7 +169,7 @@ def _stored_config(storage: SQLiteStorage, service: str) -> ServiceYaml:
 
 
 def build_config_reload(
-    storage: SQLiteStorage,
+    storage: Storage,
     forge: ForgePort,
     metrics: MetricsRegistry,
 ) -> Callable[[], None]:
@@ -202,7 +203,7 @@ def build_config_reload(
 
 def build_fix_executor(
     settings: Settings,
-    storage: SQLiteStorage,
+    storage: Storage,
     forge: ForgePort,
 ) -> FixExecutor | None:
     """The live fix executor: present when forge + model credentials exist."""
@@ -227,7 +228,7 @@ def _parse_authorized(settings: Settings) -> frozenset[str]:
 
 
 def build_commands(
-    storage: SQLiteStorage,
+    storage: Storage,
     *,
     forge: ForgePort,
     rca: RcaDispatcher,
@@ -254,14 +255,13 @@ def build_commands(
 def compose(settings: Settings, forge: ForgePort | None = None) -> Components:
     """Assemble the full running system (R-01 closure path)."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    database = settings.database_url or str(settings.data_dir / "wakey.db")
     # SEC-4/E10-T3: reversible credentials get AES-GCM at rest when a master
     # key is configured; configuring a key without the crypto package is a
     # hard error (fail closed) rather than silently-plaintext storage.
     secret_box: SecretBox | None = None
     if settings.master_key.strip():
         secret_box = SecretBox(settings.master_key)
-    storage = SQLiteStorage(database.removeprefix("sqlite://"), secret_box=secret_box)
+    storage = open_storage(settings, secret_box=secret_box)  # SQLite or Postgres (OPS-5)
     storage.recover_stale_deliveries()  # crash recovery before serving (R-02)
 
     metrics = MetricsRegistry()
@@ -379,8 +379,12 @@ def compose(settings: Settings, forge: ForgePort | None = None) -> Components:
     )
 
 
-def open_storage(settings: Settings) -> SQLiteStorage:
-    """Storage-only composition for the read-only CLI subcommands."""
+def open_storage(
+    settings: Settings, secret_box: SecretBox | None = None
+) -> SQLiteStorage | PostgresStorage:
+    """Open the configured backend (OPS-5): SQLite default, Postgres via DSN."""
+    if settings.database_url.startswith(("postgresql://", "postgres://")):
+        return PostgresStorage(settings.database_url, secret_box=secret_box)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     database = settings.database_url or str(settings.data_dir / "wakey.db")
-    return SQLiteStorage(database.removeprefix("sqlite://"))
+    return SQLiteStorage(database.removeprefix("sqlite://"), secret_box=secret_box)
