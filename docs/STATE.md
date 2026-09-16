@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 9) — CLI core live: `wakey status` (version + active fingerprint count) and `wakey board` (--service filter) over the new Storage.list_active_fingerprints query. 102 tests green. Development ≈ 35% of backlog tasks, ≈ 55% of P1 effort (all core engines + CLI slice). Remaining: fix-proposal delivery, verification watcher, GUI dashboard pages, M3 hardening; live gates need founder GitHub token + LLM key/Ollama in .env.
+
 - 2026-09-16 (cont. 8) — Verification verdict core (VER-1/2): pure decide_verdict over watcher inputs (success/insufficient/inconclusive, revert-aware, deploy-aware). 98 tests green. Development ≈ 32% of backlog tasks. Remaining buildable: fix-proposal delivery via forge, verification watcher scheduling, dashboard/CLI, M3 hardening. Live gates: GitHub token + LLM key still with founder.
 
 - 2026-09-16 (cont. 7) — M2 fix agent core (E8-T1..T4): EligibilityInput gate with named refusals, ReproFirstFixer loop (failing repro required pre-patch, else abort "does not reproduce"; sandboxed test runs with timeout; unified diff incl. repro file; bounded iterations). Scripted proposer stands in for the LLM tier. 97 tests green. Development ≈ 30% of backlog tasks, ≈ 45% of P1 effort-weighted. Remaining: fix-proposal delivery (draft MR via forge), verification loop, dashboard/CLI, M3 hardening; live gates await founder credentials.
