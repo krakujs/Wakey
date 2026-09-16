@@ -108,6 +108,10 @@ def _run_setup_token(force: bool) -> int:
 
 def _run_backup(settings: Settings, out: str | None) -> int:
     storage = open_storage(settings)
+    if type(storage).__module__.startswith("psycopg") or not hasattr(storage, "backup"):
+        storage.close()
+        print("backup: Postgres backends are backed up with pg_dump (docs/operations.md)")
+        return 1
     destination = _backup_target(settings, out)
     storage.backup(destination)
     storage.close()
