@@ -85,6 +85,10 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 
 - None. (Add rows as `R-<n>` with mitigation owner.)
 
+## Execution queue (continuous mode — phase discipline per founder 2026-09-16)
+
+**P1 must fully complete — all four gates plus G-gate — before any P2/P3 item begins.** Current queue order:
+
 1. ✅ E10-T1 redaction engine — done, committed (13 corpus tests)
 2. ✅ E5-T1/T2 fingerprint engine — done, committed (all 4 P1 languages: python/java/js/php; 11 tests)
 3. ✅ E2-T5 key-partitioned bounded queue + worker pool — done (4 tests)
