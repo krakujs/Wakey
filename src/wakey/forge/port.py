@@ -40,6 +40,7 @@ class ConsoleForge:
     def __init__(self) -> None:
         self.created: list[tuple[Fingerprint, str]] = []
         self.comments: list[tuple[TicketRef, str]] = []
+        self.proposals: list[dict[str, str]] = []
 
     def create_ticket(self, fingerprint: Fingerprint, title: str, body: str) -> TicketRef:
         self.created.append((fingerprint, body))
@@ -52,3 +53,8 @@ class ConsoleForge:
     def add_comment(self, ticket: TicketRef, body: str) -> None:
         self.comments.append((ticket, body))
         print(f"[wakey comment on {ticket.issue_id}] {body}")
+
+    def open_draft_proposal(self, branch: str, title: str, body: str) -> TicketRef:
+        self.proposals.append({"branch": branch, "title": title, "body": body})
+        print(f"[wakey draft proposal] {branch}: {title}")
+        return TicketRef(issue_id=f"console-{branch}", url=f"console://pulls/{branch}")

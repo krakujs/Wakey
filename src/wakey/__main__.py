@@ -14,14 +14,18 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+from datetime import UTC, datetime
 
 import uvicorn
 
 from wakey import __version__
 from wakey.core.config import Settings
 from wakey.core.logging import setup_logging
+from wakey.core.models import LogEvent, Severity
 from wakey.core.server import create_app
 from wakey.core.storage import SQLiteStorage
+from wakey.forge.port import ConsoleForge
+from wakey.ingest.pipeline import IngestPipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
     board.add_argument("--service", default=None)
 
     subparsers.add_parser("status", help="one-glance instance summary")
+
+    subparsers.add_parser("doctor", help="synthetic-error end-to-end pipeline check")
     return parser
 
 
@@ -65,6 +71,23 @@ def main(argv: list[str] | None = None) -> int:
         for fp in storage.list_active_fingerprints(getattr(args, "service", None)):
             print(f"fp:{fp.fp_hash}  {fp.service:<20} x{fp.occurrences:<6} {fp.state.value}")
         return 0
+    if args.command == "doctor":
+        setup_logging("ERROR")
+        settings = Settings.from_env(dict(os.environ))
+        storage = open_storage(settings)
+        pipeline = IngestPipeline(storage, ConsoleForge())
+        event = LogEvent(
+            id="evt-doctor0000ff",
+            ts=datetime.now(UTC),
+            service="doctor",
+            environment="prod",
+            severity=Severity.ERROR,
+            message="wakey doctor synthetic error: connection refused to db:0000",
+            source="doctor",
+        )
+        result = pipeline.handle_event(event)
+        print(f"doctor: pipeline outcome={result.outcome.value} ({result.detail})")
+        return 0 if result.outcome.value in {"ticketed", "recorded", "absorbed"} else 1
     if args.command != "serve":
         print(f"wakey {__version__} — use 'wakey serve' to start the server")
         return 0
@@ -72,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.from_env(dict(os.environ))
     setup_logging(settings.log_level)
     storage = open_storage(settings)
+    assert isinstance(settings, Settings)
 
     app = create_app(settings, storage)
     logging.getLogger(__name__).info("wakey listening on port %s", settings.port)
