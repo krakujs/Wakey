@@ -64,6 +64,10 @@ def create_app(
         response.headers["X-Request-ID"] = request_id
         return response
 
+    @app.get("/")
+    def root() -> Response:
+        return Response(status_code=302, headers={"Location": "/board"})
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         """Liveness: the process is up. Never checks dependencies (WF-11 §2)."""
