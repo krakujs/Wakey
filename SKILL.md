@@ -107,6 +107,7 @@ E10/E11 are **continuous**: security and operability requirements apply from the
 - Never merge or delete another agent's/work-stream's in-progress state in STATE.md — coordinate via the decisions log.
 - Never let docs and code diverge: if you change behavior, the spec changes in the same PR.
 - Never optimize latency/quality metrics by raising autonomy beyond the configured autonomy level.
+- **Never use `git commit --amend`** — always verify HEAD is the intended commit before committing; if a commit lands wrong, fix forward with a follow-up commit. (Repeated amend accidents folded unrelated changes into docs commits.)
 - **Never run uncapped tests or load on the host**: no fork/spawn without caps, no unbounded allocations, no metal load tests without container limits — a runaway benchmark must always die at its cap, never on the PC (eng-standards §3, host guardrails).
 
 ## 9. Planned direction: write-path monitoring (the "Ponytail" plugin)
