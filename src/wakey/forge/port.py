@@ -31,6 +31,8 @@ class ForgePort(Protocol):
 
     def add_comment(self, ticket: TicketRef, body: str) -> None: ...
 
+    def open_draft_proposal(self, branch: str, title: str, body: str) -> TicketRef: ...
+
 
 class ConsoleForge:
     """Development sink: prints tickets, records every call for assertions."""

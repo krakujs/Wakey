@@ -96,12 +96,14 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 9. ✅ Two-service demo 7/7 — M0 rehearsal complete
 10. ✅ E3 GitHub adapter core — done (ForgePort implementation + 6 fixture contract tests; registration wizard + live gate need founder credentials)
 11. ✅ M1 RCA skeleton started — heuristic classifier (infra/config/code-fix/needs-human + confidence), RCA comment posting, audit; live model tier needs key/Ollama
-12. ⏳ M0 live gate: real GCP error -> real GitHub ticket (blocked on founder credentials)
+12. 🔶 M0 live gate: GitHub half PASSED — real issue #1 created+commented on krakujs/linux-clipboard-manager via live credential check (demo/live_github_check.py, allowlist-guarded); remaining: real GCP error flowing through ingest
     ✅ 9b. M0 REHEARSAL with simulated GitHub: done — make demo-m0 / tests/e2e/test_m0_rehearsal.py (real adapter over loopback HTTP to the local simulator; simulated token only)
 
 Rules: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated at wrap-up or gate.
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-16 (cont. 10) — **Live GitHub check PASS**: founder token (stored in .env only, allowlist-guarded adapter) created issue #1 + comment on krakujs/linux-clipboard-manager through the real GitHubAdapter. Adapter refactored to GitHubConfig dataclass + allowlist guard. SKILL.md section 8: repo allowlist never-rule. Token rotation recommended after test phase (shared via chat). 102 tests green.
 
 - 2026-09-16 (cont. 9) — CLI core live: `wakey status` (version + active fingerprint count) and `wakey board` (--service filter) over the new Storage.list_active_fingerprints query. 102 tests green. Development ≈ 35% of backlog tasks, ≈ 55% of P1 effort (all core engines + CLI slice). Remaining: fix-proposal delivery, verification watcher, GUI dashboard pages, M3 hardening; live gates need founder GitHub token + LLM key/Ollama in .env.
 

@@ -91,6 +91,29 @@ class GitHubSimulator:
             comments.append({"body": data.get("body", "")})
             return JSONResponse({"id": len(comments)}, status_code=201)
 
+        @sim.post("/repos/{owner}/{repo}/pulls")
+        async def create_pull(owner: str, repo: str, request: Request) -> JSONResponse:
+            denied = authorize(request)
+            if denied is not None:
+                return denied
+            data = await request.json()
+            pull = {
+                "number": self._next_number,
+                "repo": f"{owner}/{repo}",
+                "title": data.get("title", ""),
+                "draft": data.get("draft", True),
+                "state": "open",
+            }
+            self._next_number += 1
+            self.issues.append(pull)
+            return JSONResponse(
+                {
+                    "number": pull["number"],
+                    "html_url": f"https://github.sim/{owner}/{repo}/pull/{pull['number']}",
+                },
+                status_code=201,
+            )
+
         return sim
 
 

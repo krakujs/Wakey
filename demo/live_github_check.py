@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import httpx  # noqa: E402
 
 from wakey.core.models import Fingerprint, Severity  # noqa: E402
-from wakey.forge.github import GitHubAdapter  # noqa: E402
+from wakey.forge.github import GitHubAdapter, GitHubConfig  # noqa: E402
 
 ALLOWED_REPO = "krakujs/linux-clipboard-manager"
 
@@ -30,11 +30,12 @@ def main() -> int:
             env[key.strip()] = value.strip()
     token = env["WAKEY_GITHUB_TOKEN"]
 
-    adapter = GitHubAdapter(
+    config = GitHubConfig(
         token=token,
         repo=ALLOWED_REPO,
         allowed_repos=(ALLOWED_REPO,),  # hard guard: nothing else may be touched
     )
+    adapter = GitHubAdapter(config)
     fingerprint = Fingerprint(
         fp_hash="live0gate0check0",
         service="payments-api",

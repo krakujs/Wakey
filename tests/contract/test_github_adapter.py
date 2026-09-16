@@ -7,7 +7,13 @@ import httpx
 import pytest
 
 from wakey.core.models import Fingerprint, Severity
-from wakey.forge.github import ForgeAuthError, ForgeError, ForgeRateLimited, GitHubAdapter
+from wakey.forge.github import (
+    ForgeAuthError,
+    ForgeError,
+    ForgeRateLimited,
+    GitHubAdapter,
+    GitHubConfig,
+)
 from wakey.forge.port import ConsoleForge, TicketRef
 
 FP = Fingerprint(
@@ -24,9 +30,8 @@ TOKEN_HEADER = "Bearer ght_test"
 
 def make_adapter(handler: httpx.Handler) -> GitHubAdapter:
     transport = httpx.MockTransport(handler)
-    return GitHubAdapter(
-        token="ght_test", repo="acme/payments", client=httpx.Client(transport=transport)
-    )
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    return GitHubAdapter(config, client=httpx.Client(transport=transport))
 
 
 def test_create_ticket_posts_payload_and_parses_ref() -> None:
@@ -93,3 +98,21 @@ def test_console_forge_records_for_assertions() -> None:
     ref = forge.create_ticket(FP, "title", "body")
     forge.add_comment(ref, "note")
     assert len(forge.created) == 1 and len(forge.comments) == 1
+
+
+def test_open_draft_proposal_posts_draft_pull() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["json"] = request.read()
+        return httpx.Response(
+            201, json={"number": 7, "html_url": "https://github.com/acme/payments/pull/7"}
+        )
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    ref = adapter.open_draft_proposal("wakey/fix-fp3f9a", "[wakey] fix (draft)", "body")
+    assert ref.issue_id == "7" and ref.url.endswith("/pull/7")
+    assert seen["path"] == "/repos/acme/payments/pulls"
+    assert b'"draft":true' in seen["json"]

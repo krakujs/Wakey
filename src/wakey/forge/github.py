@@ -29,26 +29,37 @@ class ForgeRateLimited(ForgeError):
     """Primary or secondary rate limit hit; backoff was exhausted."""
 
 
-class GitHubAdapter:
-    """Minimal ForgePort implementation against the GitHub REST API."""
+class GitHubConfig:
+    """Adapter configuration; ``allowed_repos`` is the hard write-guard."""
 
     def __init__(
         self,
         token: str,
         repo: str,
         api_base: str = "https://api.github.com",
-        client: httpx.Client | None = None,
         max_retries: int = 2,
         allowed_repos: tuple[str, ...] | None = None,
     ) -> None:
         if allowed_repos is not None and repo not in allowed_repos:
-            raise ForgeError(f"repo {repo!r} is not in the allowlist {allowed_repos}")
-        self._token = token
-        self._repo = repo
-        self._allowed_repos = allowed_repos
-        self._api_base = api_base.rstrip("/")
+            msg = f"repo {repo!r} is not in the allowlist {allowed_repos}"
+            raise ForgeError(msg)
+        self.token = token
+        self.repo = repo
+        self.api_base = api_base
+        self.max_retries = max_retries
+        self.allowed_repos = allowed_repos
+
+
+class GitHubAdapter:
+    """Minimal ForgePort implementation against the GitHub REST API."""
+
+    def __init__(self, config: GitHubConfig, client: httpx.Client | None = None) -> None:
+        self._config = config
+        self._token = config.token
+        self._repo = config.repo
+        self._api_base = config.api_base.rstrip("/")
         self._client = client or httpx.Client(timeout=15)
-        self._max_retries = max_retries
+        self._max_retries = config.max_retries
 
     def _request(self, method: str, path: str, json_body: object) -> httpx.Response:
         url = f"{self._api_base}{path}"
@@ -84,3 +95,13 @@ class GitHubAdapter:
         self._request(
             "POST", f"/repos/{self._repo}/issues/{ticket.issue_id}/comments", {"body": body}
         )
+
+    def open_draft_proposal(self, branch: str, title: str, body: str) -> TicketRef:
+        """Draft PR from an existing branch (E8-T5); never merged by Wakey."""
+        response = self._request(
+            "POST",
+            f"/repos/{self._repo}/pulls",
+            {"title": title, "head": branch, "base": "main", "draft": True, "body": body},
+        )
+        data = response.json()
+        return TicketRef(issue_id=str(data["number"]), url=data["html_url"])

@@ -20,7 +20,7 @@ from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import Service
 from wakey.core.server import create_app
 from wakey.core.storage import SQLiteStorage
-from wakey.forge.github import GitHubAdapter
+from wakey.forge.github import GitHubAdapter, GitHubConfig
 from wakey.forge.simulator import GitHubSimulator, serve_in_background
 
 SIM_TOKEN = "sim-token"  # simulated credential — the only "key" involved
@@ -35,9 +35,8 @@ def build_stack(tmp_path: Path) -> tuple[TestClient, GitHubSimulator, object]:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     server = serve_in_background(sim.create_app(), port)
-    adapter = GitHubAdapter(
-        token=SIM_TOKEN, repo="acme/payments", api_base=f"http://127.0.0.1:{port}"
-    )
+    config = GitHubConfig(token=SIM_TOKEN, repo="acme/payments", api_base=f"http://127.0.0.1:{port}")
+    adapter = GitHubAdapter(config)
 
     storage = SQLiteStorage(tmp_path / "wakey.db")
     key_hash = hashlib.sha256(KEY.encode()).hexdigest()[:16]
