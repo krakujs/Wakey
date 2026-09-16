@@ -89,10 +89,10 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 
 Ordered critical path to the M0 demo (error in → ticket out, local):
 
-1. ✅ E10-T1 redaction engine → `src/wakey/security/redaction.py`
-2. ⏳ E2-T5 key-partitioned bounded queue + worker pool (per-fingerprint ordering)
-3. ⏳ E4-T2 normalizers (JSON lines / logfmt / plain, format auto-detect)
-4. ⏳ E5-T1+T2 fingerprint engine (Python traceback parser first, templating, hashing)
+1. ✅ E10-T1 redaction engine — done, committed (13 corpus tests)
+2. ✅ E5-T1/T2 fingerprint engine core — done, committed (Python parser; Java/JS/PHP parsers remain in E5-T1)
+3. ⏳ E2-T5 key-partitioned bounded queue + worker pool (per-fingerprint ordering)
+4. ⏳ E4-T2 normalizers (JSON lines / logfmt / plain, format auto-detect)
 5. ⏳ E5-T5 policy gate (thresholds, suppression, autonomy — pure logic)
 6. ⏳ E17-T1 ForgePort + console adapter (dev sink; GitHub adapter follows E3)
 7. ⏳ E4-T1 ingest endpoint `POST /ingest/{key}` wiring the full pipeline
@@ -102,6 +102,8 @@ Ordered critical path to the M0 demo (error in → ticket out, local):
 Rules: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated at wrap-up or gate.
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-16 (cont.) — Queue items 1–2 built: redaction engine (14 families, Luhn guard, fail-closed; corpus caught 2 design bugs — exact-count regex + \b, and Exception-not-re.error) and fingerprint engine (templating, Python traceback parser, env-scoped hashing; caught '2.5s' decimal-\b gap and missing lazy traceback parse). 53 tests green. History note: local-only rewrite collapsed commits — redaction engine content lives inside 7a7f8f7 (chore) whose message under-describes it; content verified complete, no data lost. Next: queue item 3 (E2-T5).
 
 - 2026-09-16 — E2-T1..T4 complete: domain models, config system (Settings + wakey.yml loader), SQLite storage (migrations, delivery dedup, occurrence accumulation — tests caught 2 real bugs: migration-before-create, misaligned UPDATE params), FastAPI server (/healthz /readyz /metrics, request-id middleware, JSON logs, lean metrics registry, serve subcommand). E1-T3 completed and verified live in Docker (compose up → /healthz 200, /readyz ready, /metrics; non-root; 149MB). 28 tests green, make check green; 5 commits. Next: E2-T5 queue, then E4 ingest (lane L-D work begins).
 - 2026-09-15 — **Development started** (founder unlocked). Wave 0, E1-T1: repo scaffold per canonical tree (src/wakey 11 packages, pyproject w/ ruff+mypy-strict+pytest-timeout caps, SPDX header tooling, Makefile check/test, CONTRIBUTING/SECURITY/.env.example, CI workflow, Dockerfile+compose). Versions grounded against live PyPI (fastapi 0.141, pydantic 2.13, mypy 2.3, ruff 0.16). Local verification green: ruff format/check, mypy strict (13 files), pytest 2/2, headers-check, docker build+run at 149MB non-root. E1-T1 → review (CI execution pending remote); E1-T2/T3/T6 in-progress. Next: E2-T1..T4 (platform skeleton + server), then E1-T3 completion.
