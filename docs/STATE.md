@@ -85,23 +85,24 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 
 - None. (Add rows as `R-<n>` with mitigation owner.)
 
-## Execution queue (auto-execute; founder directive 2026-09-16: build step-by-step until complete)
-
-Ordered critical path to the M0 demo (error in → ticket out, local):
-
 1. ✅ E10-T1 redaction engine — done, committed (13 corpus tests)
-2. ✅ E5-T1/T2 fingerprint engine core — done, committed (Python parser; Java/JS/PHP parsers remain in E5-T1)
-3. ⏳ E2-T5 key-partitioned bounded queue + worker pool (per-fingerprint ordering)
-4. ⏳ E4-T2 normalizers (JSON lines / logfmt / plain, format auto-detect)
-5. ⏳ E5-T5 policy gate (thresholds, suppression, autonomy — pure logic)
-6. ⏳ E17-T1 ForgePort + console adapter (dev sink; GitHub adapter follows E3)
-7. ⏳ E4-T1 ingest endpoint `POST /ingest/{key}` wiring the full pipeline
-8. ⏳ E6-T1 ticket creation via ForgePort
-9. ⏳ Execute docs/two-service-local-test.md → M0 rehearsal
+2. ✅ E5-T1/T2 fingerprint engine — done, committed (all 4 P1 languages: python/java/js/php; 11 tests)
+3. ✅ E2-T5 key-partitioned bounded queue + worker pool — done (4 tests)
+4. ✅ E4-T2 normalizers — done (6 tests)
+5. ✅ E5-T5 policy gate — done (6 tests; rate windows -> E5-T3)
+6. ✅ E17-T1 ForgePort + console adapter — done (lite; GitHub adapter refactor pending)
+7. ✅ E4-T1 ingest endpoint + HMAC webhook auth (migration v2) — done core; 429/queue wrap + rate limits remain
+8. ✅ E6-T1 ticket creation via ForgePort — done (core; labels/caps with E3)
+9. ✅ Two-service demo 7/7 — M0 rehearsal complete
+10. ⏳ E3 GitHub App (adapter + registration wizard; needs founder GitHub credentials for live gate)
+11. ⏳ M1: RCA agent skeleton (fake model first; live needs LLM key in .env or local Ollama)
+12. ⏳ M0 live gate: real GCP error -> real GitHub ticket (blocked on founder credentials)
 
 Rules: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated at wrap-up or gate.
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-16 (cont. 3) — E5-T1 completed (java/js/php parsers + dispatcher; tests caught typeshed Match-iterability and a precedence bug) and HMAC webhook auth (migration v2, constant-time compare, body-binding tests). 82 tests, make check green. Queue: items 1-9 done; next = E3 GitHub adapter + M1 RCA skeleton. Founder input needed for: GitHub App credentials (M0 live), LLM key/.env or Ollama endpoint (M1 live).
 
 - 2026-09-16 (cont. 2) — **Two-service demo: 7/7 green** (make demo-two-services). Full local pipeline real: ingest API (key auth + delivery dedup) -> normalizers -> redaction -> fingerprinting -> policy -> console tickets. Backlog: E2-T5, E4-T1(core), E4-T2, E5-T1(core), E5-T2, E5-T5(core), E6-T1(core), E10-T1(core), E17-T1(lite) — 73 tests, make check green. Development ≈ 15% of backlog by tasks; M0 gate rehearsal complete, real forge/GCP demo still pending. Next: queue item — Java/JS/PHP parsers, HMAC auth, E3 GitHub App (needs founder credentials), then M1 RCA agent.
 
