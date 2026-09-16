@@ -103,6 +103,8 @@ Execution mode (founder, 2026-09-16): **continuous** — work through the backlo
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 28) — **Phase discipline set**: P1 completion (all remaining tasks + M0/M1/M2/M3 gates + G-gate) required before P2/P3. P1 remainder identified and ordered in the queue above.
+
 - 2026-09-16 (cont. 25) — root route redirects to /board; 131 tests green. Development ≈ 68% of backlog tasks. Next session: GUI wizard/settings rendering, fix-proposal delivery wiring, M3 closeout.
 
 - 2026-09-16 (cont. 24) — /api/settings endpoint (masked, secrets-free) for the GUI settings page; 131 tests green.
