@@ -50,6 +50,9 @@ class Settings(BaseModel):
     webhook_secret: str = ""
     database_url: str = ""  # empty → SQLite at <data_dir>/wakey.db
     log_level: str = "INFO"
+    llm_base_url: str = ""  # Anthropic-compatible endpoint; empty = no live tier
+    llm_api_key: str = ""
+    llm_model: str = "glm-4.5-air"
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> Settings:
@@ -57,21 +60,26 @@ class Settings(BaseModel):
         problems: list[str] = []
         parsed: dict[str, Any] = {}
 
+        simple_fields = {
+            "WAKEY_BASE_URL": "base_url",
+            "WAKEY_DATA_DIR": "data_dir",
+            "WAKEY_MASTER_KEY": "master_key",
+            "WAKEY_WEBHOOK_SECRET": "webhook_secret",
+            "WAKEY_DATABASE_URL": "database_url",
+            "WAKEY_LLM_BASE_URL": "llm_base_url",
+            "WAKEY_LLM_API_KEY": "llm_api_key",
+            "WAKEY_LLM_MODEL": "llm_model",
+        }
+        for env_key, field_name in simple_fields.items():
+            if value := env.get(env_key):
+                parsed[field_name] = Path(value) if field_name == "data_dir" else value
+
         if raw_port := env.get("WAKEY_PORT"):
             try:
                 parsed["port"] = int(raw_port)
             except ValueError:
                 problems.append(f"WAKEY_PORT must be an integer, got {raw_port!r}")
-        if raw_base := env.get("WAKEY_BASE_URL"):
-            parsed["base_url"] = raw_base
-        if raw_dir := env.get("WAKEY_DATA_DIR"):
-            parsed["data_dir"] = Path(raw_dir)
-        if raw_key := env.get("WAKEY_MASTER_KEY"):
-            parsed["master_key"] = raw_key
-        if raw_secret := env.get("WAKEY_WEBHOOK_SECRET"):
-            parsed["webhook_secret"] = raw_secret
-        if raw_db := env.get("WAKEY_DATABASE_URL"):
-            parsed["database_url"] = raw_db
+
         if raw_level := env.get("WAKEY_LOG_LEVEL"):
             if raw_level.upper() not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
                 problems.append(
