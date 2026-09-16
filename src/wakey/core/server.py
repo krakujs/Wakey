@@ -24,6 +24,7 @@ from wakey.forge.port import ForgePort
 from wakey.ingest.normalizers import EventContext, parse_events
 from wakey.ingest.pipeline import IngestPipeline
 from wakey.security.redaction import RedactionEngine
+from wakey.web.board import render_board_html
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,17 @@ def create_app(
     @app.get("/metrics")
     def prometheus_metrics() -> Response:
         return Response(content=metrics.render(), media_type="text/plain; version=0.0.4")
+
+    @app.get("/board")
+    def board() -> Response:
+        """WF-12 page 3: the live board, server-rendered (NFR-9: no JS frameworks)."""
+        return Response(
+            content=render_board_html(
+                storage.list_active_fingerprints(),
+                generated_at=utcnow().isoformat(),
+            ),
+            media_type="text/html",
+        )
 
     if pipeline is not None:
         register_ingest(app, storage, pipeline, engine, metrics)
