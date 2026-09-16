@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 25) — root route redirects to /board; 131 tests green. Development ≈ 68% of backlog tasks. Next session: GUI wizard/settings rendering, fix-proposal delivery wiring, M3 closeout.
+
 - 2026-09-16 (cont. 24) — /api/settings endpoint (masked, secrets-free) for the GUI settings page; 131 tests green.
 
 - 2026-09-16 (cont. 23) — Security review checklist consolidated (docs/security-review.md): all verified controls with test paths, open items = external review + dashboard auth probe (GUI). M3 hardening pass structurally complete except those two. Development ≈ 65% of backlog tasks.
