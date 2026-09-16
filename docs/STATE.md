@@ -107,6 +107,8 @@ Execution mode (founder, 2026-09-16): **continuous** — work through the backlo
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 29) — Ticket lifecycle decisions (E6-T2/T3/T4) done: close-on-silence, recurrence-reopen, ignore-terminal. 4 tests. P1 engines now 100% built. P1 remainder: wizard/registration closeout (E3-T1/T5), CI-on-remote (blocked on push authorization), dead-letter replay + efficiency passes, live gate evidence recording. Process slip: lifecycle code folded into docs commit 347b7b4 via amend — amendment is now banned outright (SKILL follow-up).
+
 - 2026-09-16 (cont. 28) — **Phase discipline set**: P1 completion (all remaining tasks + M0/M1/M2/M3 gates + G-gate) required before P2/P3. P1 remainder identified and ordered in the queue above.
 
 - 2026-09-16 (cont. 25) — root route redirects to /board; 131 tests green. Development ≈ 68% of backlog tasks. Next session: GUI wizard/settings rendering, fix-proposal delivery wiring, M3 closeout.
