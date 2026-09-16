@@ -19,8 +19,11 @@ RUN pip install --no-cache-dir . \
 
 USER wakey
 
-ENV WAKEY_DATA_DIR=/var/lib/wakey
+ENV WAKEY_DATA_DIR=/var/lib/wakey \
+    WAKEY_PORT=8477
 EXPOSE 8477
 
-# Pre-M0: reports version and exits; becomes the real server CMD at E2-T4.
-CMD ["python", "-m", "wakey"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8477/healthz', timeout=4)"]
+
+CMD ["python", "-m", "wakey", "serve"]
