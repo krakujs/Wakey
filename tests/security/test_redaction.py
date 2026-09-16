@@ -24,6 +24,10 @@ SECRETS = {
         "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----"
     ),
     "url_credentials": "postgres://admin:s3cr3tpw@db.internal:5432/wakey",
+    "stripe_key": "sk_test_4eC39HqLyjWDarjtT1zdp7dc",
+    "pypi_token": "pypi-AgEIcHlwaS5vcmcCJDkyYj",
+    "npm_token": "npm_kJzSTKabcdef1234567890abcdef123456",
+    "sendgrid_key": "SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz123456",
     "email": "incident-owner@acme-corp.io",
     "credit_card": "4111 1111 1111 1111",
 }

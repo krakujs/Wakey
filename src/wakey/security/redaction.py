@@ -28,6 +28,10 @@ BUILTIN_PATTERNS: tuple[tuple[str, str], ...] = (
     ("bearer", r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}\b"),
     ("private_key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
     ("url_credentials", r"\b\w+(?:s)?://[^/\s:@\"']+:[^@\s/\"']+@"),
+    ("stripe_key", r"\b[skpr]k_(test|live)_[0-9a-zA-Z]{20,}\b"),
+    ("pypi_token", r"\bpypi-[A-Za-z0-9_-]{20,}\b"),
+    ("npm_token", r"\bnpm_[A-Za-z0-9]{30,}\b"),
+    ("sendgrid_key", r"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b"),
     ("email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     ("credit_card", r"\b(?:\d[ -]?){13,19}\b"),
 )
