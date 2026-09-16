@@ -39,9 +39,13 @@ class GitHubAdapter:
         api_base: str = "https://api.github.com",
         client: httpx.Client | None = None,
         max_retries: int = 2,
+        allowed_repos: tuple[str, ...] | None = None,
     ) -> None:
+        if allowed_repos is not None and repo not in allowed_repos:
+            raise ForgeError(f"repo {repo!r} is not in the allowlist {allowed_repos}")
         self._token = token
         self._repo = repo
+        self._allowed_repos = allowed_repos
         self._api_base = api_base.rstrip("/")
         self._client = client or httpx.Client(timeout=15)
         self._max_retries = max_retries
