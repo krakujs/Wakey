@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 19) — Verification scheduler (E9-T1 scheduling) done: bounded rounds, injectable clock/sleep, crash-tolerant passes; tests caught an order assumption (verified fingerprint leaves the watched set). 125 tests green. Process note: one more amend slip (scheduler code folded into a docs commit) — the SKILL ban now includes using plain commits only, checked against HEAD first. Development ≈ 58% of backlog.
+
 - 2026-09-16 (cont. 18) — Skill registry (founder directive: models connect to skills/plugins, complete user authority, simple loading): SkillManifest validation, SkillRegistry with disabled-by-default + explicit enable + profile binding (hard errors on unknown/disabled). src/wakey/skills/. 5 tests; 108 green. Development ≈ 57% of backlog tasks. Remaining: entrypoint execution via plugin runtime (E16), delivery wiring, GUI, M3 hardening.
 
 - 2026-09-16 (cont. 17) — doctor now exercises the live LLM RCA tier when WAKEY_LLM_* is configured (verified live: GLM classified the synthetic error). 118 tests green. History note: doctor wiring folded into b4f446b (message under-describes it); amend now banned in SKILL section 8. Development ≈ 55% of backlog tasks, ≈ 80% of P1 effort. Remaining: fix-proposal delivery wiring into ingest, verification watcher scheduling loop, GUI wizard/settings, M3 hardening, M0 GCP leg.
