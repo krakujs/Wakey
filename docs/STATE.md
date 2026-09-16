@@ -99,7 +99,7 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 12. 🔶 M0 live gate: GitHub half PASSED — real issue #1 created+commented on krakujs/linux-clipboard-manager via live credential check (demo/live_github_check.py, allowlist-guarded); remaining: real GCP error flowing through ingest
     ✅ 9b. M0 REHEARSAL with simulated GitHub: done — make demo-m0 / tests/e2e/test_m0_rehearsal.py (real adapter over loopback HTTP to the local simulator; simulated token only)
 
-Rules: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated at wrap-up or gate.
+Execution mode (founder, 2026-09-16): **continuous** — work through the backlog back-to-back without round gating. Rules unchanged: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated continuously.
 
 ## Session log (most recent first, one line per session)
 
