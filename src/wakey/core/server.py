@@ -25,6 +25,7 @@ from wakey.ingest.normalizers import EventContext, parse_events
 from wakey.ingest.pipeline import IngestPipeline
 from wakey.security.redaction import RedactionEngine
 from wakey.web.board import render_board_html
+from wakey.web.settings_page import render_settings_html
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,18 @@ def create_app(
             "llm_model": settings.llm_model or None,
             "log_level": settings.log_level,
         }
+
+    @app.get("/settings")
+    def settings_page() -> Response:
+        summary = {
+            "port": settings.port,
+            "base_url": settings.base_url,
+            "database": "postgres" if settings.database_url else "sqlite",
+            "llm_configured": bool(settings.llm_base_url and settings.llm_api_key),
+            "llm_model": settings.llm_model or None,
+            "log_level": settings.log_level,
+        }
+        return Response(render_settings_html(summary), media_type="text/html")
 
     @app.get("/metrics")
     def prometheus_metrics() -> Response:

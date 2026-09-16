@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -84,3 +85,14 @@ def test_root_redirects_to_board(tmp_path) -> None:
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 302
     assert response.headers["location"] == "/board"
+
+
+def test_settings_page_renders_without_secrets(tmp_path: Path) -> None:
+    storage = SQLiteStorage(tmp_path / "wakey.db")
+    client = TestClient(
+        create_app(Settings(llm_api_key="secret"), storage, MetricsRegistry(), forge=ConsoleForge())
+    )
+    response = client.get("/settings")
+    assert response.status_code == 200
+    assert "configured" in response.text
+    assert "secret" not in response.text
