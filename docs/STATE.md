@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 8) — Verification verdict core (VER-1/2): pure decide_verdict over watcher inputs (success/insufficient/inconclusive, revert-aware, deploy-aware). 98 tests green. Development ≈ 32% of backlog tasks. Remaining buildable: fix-proposal delivery via forge, verification watcher scheduling, dashboard/CLI, M3 hardening. Live gates: GitHub token + LLM key still with founder.
+
 - 2026-09-16 (cont. 7) — M2 fix agent core (E8-T1..T4): EligibilityInput gate with named refusals, ReproFirstFixer loop (failing repro required pre-patch, else abort "does not reproduce"; sandboxed test runs with timeout; unified diff incl. repro file; bounded iterations). Scripted proposer stands in for the LLM tier. 97 tests green. Development ≈ 30% of backlog tasks, ≈ 45% of P1 effort-weighted. Remaining: fix-proposal delivery (draft MR via forge), verification loop, dashboard/CLI, M3 hardening; live gates await founder credentials.
 
 - 2026-09-16 (cont. 6) — **Local GitHub simulator** (forge/simulator.py): in-memory GitHub API subset with token auth; M0 gate rehearsal runs GitHubAdapter over loopback HTTP to it — full production path with a simulated credential, zero live calls (make demo-m0 + e2e test). 94 tests green. Founder directive honored: no live GitHub touched.
