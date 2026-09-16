@@ -76,3 +76,11 @@ def test_render_board_html_colors_states() -> None:
     assert html.count("#ffb020") == 2  # investigating + fixing
     assert "#2fd67b" in html  # verified-closed
     assert "wakey board — 4 active" in html
+
+
+def test_root_redirects_to_board(tmp_path) -> None:
+    storage = SQLiteStorage(tmp_path / "wakey.db")
+    client = TestClient(create_app(Settings(), storage, MetricsRegistry(), forge=ConsoleForge()))
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "/board"
