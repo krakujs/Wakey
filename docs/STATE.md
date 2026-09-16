@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 7) — M2 fix agent core (E8-T1..T4): EligibilityInput gate with named refusals, ReproFirstFixer loop (failing repro required pre-patch, else abort "does not reproduce"; sandboxed test runs with timeout; unified diff incl. repro file; bounded iterations). Scripted proposer stands in for the LLM tier. 97 tests green. Development ≈ 30% of backlog tasks, ≈ 45% of P1 effort-weighted. Remaining: fix-proposal delivery (draft MR via forge), verification loop, dashboard/CLI, M3 hardening; live gates await founder credentials.
+
 - 2026-09-16 (cont. 6) — **Local GitHub simulator** (forge/simulator.py): in-memory GitHub API subset with token auth; M0 gate rehearsal runs GitHubAdapter over loopback HTTP to it — full production path with a simulated credential, zero live calls (make demo-m0 + e2e test). 94 tests green. Founder directive honored: no live GitHub touched.
 
 - 2026-09-16 (cont. 5) — RCA agent skeleton: heuristic classifier (infra/config/code-fix/needs-human with confidence), forge comment posting, audit. Tests caught a case-sensitivity bug in the markers. 93 tests green. Development ≈ 22% of backlog tasks; M0 rehearsal done, M1 skeleton done, M2 fix agent + M3 hardening remaining.
