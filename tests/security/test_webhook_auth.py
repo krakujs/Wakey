@@ -60,8 +60,9 @@ def test_valid_signature_accepted(signed_client: TestClient) -> None:
         content=PAYLOAD,
         headers={"X-Wakey-Signature": sign(SECRET, PAYLOAD)},
     )
-    assert response.status_code == 200
-    assert response.json()["accepted"] == 1
+    assert response.status_code == 202
+    assert response.json()["accepted"] is True
+    assert response.json()["state"] == "pending"
 
 
 def test_invalid_signature_rejected(signed_client: TestClient) -> None:

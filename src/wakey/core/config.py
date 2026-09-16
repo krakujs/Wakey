@@ -18,9 +18,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 MAX_REGEX_LENGTH = 500  # crude ReDoS surface bound; real guard lands with E10-T1
+
+_SUPPORTED_DATABASE_SCHEMES = ("sqlite", "")
 
 
 class ConfigError(Exception):
@@ -53,6 +55,21 @@ class Settings(BaseModel):
     llm_base_url: str = ""  # Anthropic-compatible endpoint; empty = no live tier
     llm_api_key: str = ""
     llm_model: str = "glm-4.5-air"
+    github_token: str = ""  # empty → ConsoleForge development sink (R-01)
+    github_repo: str = ""  # owner/name tickets are created in
+    github_api_base: str = "https://api.github.com"
+    allowed_repos: str = ""  # comma-separated write allowlist; empty = unrestricted
+    worker_count: int = Field(default=2, ge=1, le=16)
+    rca_max_per_hour: int = Field(default=30, ge=1)
+    retention_days: int = Field(default=30, ge=1)  # event/delivery retention (R-14)
+    # Deny-by-default @wakey command authorization (WF-07 §3) until
+    # installation-permission checks land (G-gate):
+    authorized_users: str = ""
+    self_watch: bool = False  # OPS-4: ingest wakey's own errors
+    # GCP Pub/Sub push OIDC verification (E4-T4): when the audience is set,
+    # /ingest/gcp/<key> verifies the push's Bearer token before accepting.
+    oidc_audience: str = ""
+    oidc_service_account: str = ""
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> Settings:
@@ -69,16 +86,32 @@ class Settings(BaseModel):
             "WAKEY_LLM_BASE_URL": "llm_base_url",
             "WAKEY_LLM_API_KEY": "llm_api_key",
             "WAKEY_LLM_MODEL": "llm_model",
+            "WAKEY_GITHUB_TOKEN": "github_token",
+            "WAKEY_GITHUB_REPO": "github_repo",
+            "WAKEY_GITHUB_API_BASE": "github_api_base",
+            "WAKEY_ALLOWED_REPOS": "allowed_repos",
+            "WAKEY_AUTHORIZED_USERS": "authorized_users",
+            "WAKEY_OIDC_AUDIENCE": "oidc_audience",
+            "WAKEY_OIDC_SERVICE_ACCOUNT": "oidc_service_account",
         }
         for env_key, field_name in simple_fields.items():
             if value := env.get(env_key):
                 parsed[field_name] = Path(value) if field_name == "data_dir" else value
 
-        if raw_port := env.get("WAKEY_PORT"):
-            try:
-                parsed["port"] = int(raw_port)
-            except ValueError:
-                problems.append(f"WAKEY_PORT must be an integer, got {raw_port!r}")
+        if env.get("WAKEY_SELF_WATCH", "").strip().lower() in {"1", "true", "yes"}:
+            parsed["self_watch"] = True
+
+        for env_key, field_name in (
+            ("WAKEY_WORKER_COUNT", "worker_count"),
+            ("WAKEY_RCA_MAX_PER_HOUR", "rca_max_per_hour"),
+            ("WAKEY_RETENTION_DAYS", "retention_days"),
+            ("WAKEY_PORT", "port"),
+        ):
+            if raw := env.get(env_key):
+                try:
+                    parsed[field_name] = int(raw)
+                except ValueError:
+                    problems.append(f"{env_key} must be an integer, got {raw!r}")
 
         if raw_level := env.get("WAKEY_LOG_LEVEL"):
             if raw_level.upper() not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
@@ -87,13 +120,55 @@ class Settings(BaseModel):
                 )
             parsed["log_level"] = raw_level.upper()
 
+        if (raw_db := env.get("WAKEY_DATABASE_URL", "")).strip():
+            scheme = raw_db.split("://", 1)[0].lower()
+            if scheme not in _SUPPORTED_DATABASE_SCHEMES:
+                problems.append(
+                    f"WAKEY_DATABASE_URL scheme {scheme!r} is not supported yet "
+                    f"(supported: sqlite) — Postgres lands with OPS-5"
+                )
+
+        if parsed.get("github_token") and not parsed.get("github_repo"):
+            problems.append("WAKEY_GITHUB_TOKEN requires WAKEY_GITHUB_REPO (owner/name)")
+
         if problems:
             raise ConfigError(problems)
         return cls(**parsed)
 
+    @property
+    def allowlist(self) -> tuple[str, ...] | None:
+        """Parsed repo allowlist; ``None`` means unrestricted (E10 will mandate it)."""
+        repos = tuple(r.strip() for r in self.allowed_repos.split(",") if r.strip())
+        return repos or None
+
+    @property
+    def live_forge(self) -> bool:
+        """True when a real GitHub adapter will be composed (vs ConsoleForge)."""
+        return bool(self.github_token and self.github_repo)
+
+
+def _parse_int_env(
+    env: dict[str, str], env_key: str, parsed: dict[str, Any], problems: list[str]
+) -> None:
+    """Parse one integer env var into ``parsed`` or record a named problem."""
+    raw = env.get(env_key)
+    if not raw:
+        return
+    try:
+        parsed[env_key.split("_", 1)[1].lower()] = int(raw)
+    except ValueError:
+        problems.append(f"{env_key} must be an integer, got {raw!r}")
+
 
 class ServiceYaml(BaseModel):
-    """One service block inside a repo's ``wakey.yml`` (WF-01 §A3)."""
+    """One service block inside a repo's ``wakey.yml`` (WF-01 §A3).
+
+    Strict parsing: unknown keys are rejected with a named problem, not
+    silently ignored — a typo like ``autnomy:`` must never demote a service
+    to default autonomy (R-12).
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     path: str = "."
     autonomy: Autonomy = Autonomy.TRIAGE
@@ -101,6 +176,7 @@ class ServiceYaml(BaseModel):
     immediate_count: int = Field(default=3, ge=1)
     grace_minutes: int = Field(default=30, ge=1)
     max_open_prs: int = Field(default=3, ge=1)
+    max_tickets_per_hour: int = Field(default=10, ge=1)
     confidence_floor: float = Field(default=0.75, ge=0.0, le=1.0)
     allow_without_tests: bool = False
     test_command: str | None = None
@@ -122,6 +198,8 @@ class ServiceYaml(BaseModel):
 
 class WakeyYaml(BaseModel):
     """A parsed ``wakey.yml``: services keyed by service name."""
+
+    model_config = ConfigDict(extra="forbid")
 
     services: dict[str, ServiceYaml] = Field(default_factory=dict, min_length=1)
 

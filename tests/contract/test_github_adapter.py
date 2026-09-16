@@ -16,6 +16,83 @@ from wakey.forge.github import (
 )
 from wakey.forge.port import ConsoleForge, TicketRef
 
+
+def test_branch_publication_commits_tested_tree() -> None:
+    """R-06 contract: default branch resolution -> branch -> commit -> ref update.
+
+    The mock emulates the git data API; the adapter must resolve the base,
+    create an isolated branch, publish blobs as one commit, and
+    fast-forward the ref with force=False (never a force-push).
+    """
+    calls: list[tuple[str, str, object]] = []
+    state = {"wakey_tip": "base-sha"}  # branch starts at base; moves on ref update
+
+    def respond(path: str) -> httpx.Response:
+        routes = (
+            ("/repos/acme/payments/git/ref/heads/trunk", lambda: {"object": {"sha": "base-sha"}}),
+            (
+                "/repos/acme/payments/git/ref/heads/wakey/fix-3f9a",
+                lambda: {"object": {"sha": state["wakey_tip"]}},
+            ),
+            ("/repos/acme/payments/git/commits/base-sha", lambda: {"tree": {"sha": "base-tree"}}),
+            ("/repos/acme/payments/git/blobs", lambda: {"sha": "blob-1"}),
+            ("/repos/acme/payments/git/trees", lambda: {"sha": "new-tree"}),
+            ("/repos/acme/payments/git/commits", lambda: {"sha": "commit-sha"}),
+            ("/repos/acme/payments/git/refs/heads/wakey/fix-3f9a", lambda: {"ref": "ref-ok"}),
+            ("/repos/acme/payments/git/refs", lambda: {"ref": "refs/heads/wakey/fix-3f9a"}),
+            ("/repos/acme/payments", lambda: {"default_branch": "trunk"}),
+        )
+        for suffix, payload in routes:
+            if path.endswith(suffix):
+                return httpx.Response(200, json=payload())
+        return httpx.Response(404, json={"message": "unexpected path " + path})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.read()))
+        if request.method == "POST" and request.url.path.endswith("/git/refs/heads/wakey/fix-3f9a"):
+            state["wakey_tip"] = "commit-sha"  # fast-forward applied
+            return httpx.Response(200, json={"ref": "refs/heads/wakey/fix-3f9a"})
+        return respond(request.url.path)
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert adapter.default_branch() == "trunk"
+    adapter.create_branch("wakey/fix-3f9a", "trunk")
+    sha = adapter.commit_files(
+        "wakey/fix-3f9a", "wakey: fix", {"billing.py": "def fixed():\n    return 42\n"}
+    )
+    assert sha == "commit-sha"
+
+    updates = [
+        c for c in calls if c[0] == "PATCH" and c[1].endswith("/git/refs/heads/wakey/fix-3f9a")
+    ]
+    assert len(updates) == 1
+    assert b'"force":false' in updates[0][2], "ref update must never force-push"
+
+
+def test_lifecycle_effects_patch_issue_state_and_labels() -> None:
+    """R-09 contract: close/reopen/label drive the external ticket state."""
+    seen: list[tuple[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            seen.append((request.url.path, request.read()))
+        if request.method == "PATCH":
+            seen.append((request.url.path, request.read()))
+        return httpx.Response(200, json={})
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    ref = TicketRef(issue_id="9", url="x")
+    adapter.close_ticket(ref, "verified")
+    adapter.reopen_ticket(ref)
+    adapter.add_label(ref, "wakey-verified")
+
+    assert any(p.endswith("/issues/9") and b'"state":"closed"' in body for p, body in seen)
+    assert any(p.endswith("/issues/9") and b'"state":"open"' in body for p, body in seen)
+    assert any(p.endswith("/issues/9/labels") and b"wakey-verified" in body for p, body in seen)
+
+
 FP = Fingerprint(
     fp_hash="3f9a1b2c4d5e6f70",
     service="payments-api",
@@ -112,7 +189,10 @@ def test_open_draft_proposal_posts_draft_pull() -> None:
 
     config = GitHubConfig(token="ght_test", repo="acme/payments")
     adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
-    ref = adapter.open_draft_proposal("wakey/fix-fp3f9a", "[wakey] fix (draft)", "body")
+    ref = adapter.open_draft_proposal(
+        "wakey/fix-fp3f9a", "[wakey] fix (draft)", "body", base="main"
+    )
     assert ref.issue_id == "7" and ref.url.endswith("/pull/7")
     assert seen["path"] == "/repos/acme/payments/pulls"
     assert b'"draft":true' in seen["json"]
+    assert b'"base":"main"' in seen["json"]

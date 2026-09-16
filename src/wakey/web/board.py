@@ -14,55 +14,22 @@ from datetime import datetime
 from html import escape
 from typing import Any
 
+from wakey.web.style import STYLE
+
 # State -> presentation (WF-12 page 3). Amber = wakey is acting on it;
 # green = a verified fix; every other state stays quiet body gray.
 _STATE_COLORS: dict[str, str] = {
     "investigating": "#ffb020",
     "fixing": "#ffb020",
+    "queued-rca": "#ffb020",
+    "verifying": "#ffb020",
+    "awaiting-human": "#e6a23c",
     "verified-closed": "#2fd67b",
 }
 
 # Palette tokens inlined as a plain (non-f-string) block so the CSS braces
 # need no escaping; values mirror docs/design.md and must never load remotely.
-_STYLE = """
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: #0b0d12;
-      color: #a3a8b3;
-      font: 14px/1.5 'Inter', ui-sans-serif, system-ui, sans-serif;
-    }
-    main { max-width: 1200px; margin: 0 auto; padding: 32px 20px; }
-    h1 {
-      color: #ffffff;
-      font-size: 24px;
-      font-weight: 500;
-      letter-spacing: -0.5px;
-      margin: 0 0 4px;
-    }
-    .meta { color: #7d828d; font-size: 13px; margin: 0 0 24px; }
-    .card {
-      background: #161920;
-      border-radius: 12px;
-      overflow-x: auto;
-    }
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.88px;
-      text-transform: uppercase;
-      color: #7d828d;
-      padding: 10px 14px;
-      border-bottom: 1px solid #23262e;
-      white-space: nowrap;
-    }
-    td { padding: 10px 14px; border-bottom: 1px solid #191c23; }
-    tr:last-child td { border-bottom: none; }
-    .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; }
-    .empty { text-align: center; color: #7d828d; padding: 32px 14px; }
-"""
+_STYLE = STYLE
 
 _COLUMNS = (
     "fingerprint",
@@ -83,12 +50,15 @@ def _text(value: Any) -> str:
 
 
 def _row(fp: Any) -> str:
-    """One ``<tr>`` for a fingerprint; the state cell carries its color."""
+    """One ``<tr>`` for a fingerprint; the hash links to the detail page."""
     state = _text(fp.state)
     color = _STATE_COLORS.get(state)
     state_cell = f'<span style="color:{color}">{escape(state)}</span>' if color else escape(state)
+    if getattr(fp, "chronic", False):
+        state_cell += ' <span class="pill" title="autonomous fixes blocked">chronic</span>'
+    hash_text = escape(_text(fp.fp_hash))
     cells = (
-        f'<td class="mono">{escape(_text(fp.fp_hash))}</td>',
+        f'<td class="mono"><a href="/fingerprints/{hash_text}">{hash_text}</a></td>',
         f"<td>{escape(_text(fp.service))}</td>",
         f"<td>{escape(str(fp.occurrences))}</td>",
         f"<td>{escape(_text(fp.severity))}</td>",

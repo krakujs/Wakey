@@ -48,7 +48,21 @@ def test_human_decisions_stay_quiet() -> None:
     assert decide(make_fp(state=WorkState.CLOSED_HUMAN), CONFIG).action is Action.SUPPRESSED
 
 
-def test_observe_mode_never_wakes() -> None:
+def test_observe_mode_still_wakes_tickets() -> None:
+    # Resolved contract (WF-03 §7 ↔ WF-07 §6): observe emits the wake
+    # signal so humans get the ticket; agent dispatch checks autonomy.
     loud = make_fp(occurrences=999, severity=Severity.CRITICAL)
     config = ServiceYaml(autonomy=Autonomy.OBSERVE)
-    assert decide(loud, config).action is Action.RECORD
+    assert decide(loud, config).action is Action.WAKE
+
+
+def test_below_error_severity_never_wakes() -> None:
+    loud = make_fp(occurrences=999, severity=Severity.INFO)
+    assert decide(loud, ServiceYaml()).action is Action.RECORD
+
+
+def test_burst_window_crosses_rate_cap() -> None:
+    fp = make_fp(occurrences=1, severity=Severity.ERROR)
+    config = ServiceYaml(rate_per_min=5)
+    assert decide(fp, config, rate_in_window=4).action is Action.RECORD
+    assert decide(fp, config, rate_in_window=5).action is Action.WAKE

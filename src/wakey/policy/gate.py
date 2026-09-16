@@ -1,9 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Policy gate (WF-03 §7, DET-5/6): should this fingerprint wake anyone?
 
-Pure function of (fingerprint, service config) → decision. No I/O, no time
-windows yet — rate windows land with the burst-window store (E5-T3); until
-then thresholds are count-based, which the demo and tests exercise.
+Pure function of (fingerprint, service config, window rate) → decision.
+No I/O. Error filtering is enforced here (R-05): only error-severity
+fingerprints can ever wake — an INFO storm is recorded, never ticketed.
+
+Autonomy semantics (resolved 2026-09-16, WF-03 §7 ↔ WF-07 §6 conflict):
+``observe`` still emits the wake signal so the ticket exists for humans,
+but no agent may dispatch (RCA/fix). Agent dispatch checks autonomy, not
+this gate. WF-03's acceptance criterion (agent/LLM counters stay zero)
+matches WF-07's definition.
 """
 
 from __future__ import annotations
@@ -11,8 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from wakey.core.config import Autonomy, ServiceYaml
-from wakey.core.models import Fingerprint, WorkState
+from wakey.core.config import ServiceYaml
+from wakey.core.models import Fingerprint, Severity, WorkState
 
 
 class Action(StrEnum):
@@ -28,22 +34,36 @@ class Decision:
     reason: str
 
 
-def decide(fingerprint: Fingerprint, config: ServiceYaml) -> Decision:
-    """The wake-up decision: severity × occurrences × state × autonomy."""
+def decide(
+    fingerprint: Fingerprint,
+    config: ServiceYaml,
+    rate_in_window: int = 0,
+) -> Decision:
+    """The wake-up decision: severity × occurrences × window × state."""
+    if fingerprint.severity.rank < Severity.ERROR.rank:
+        return Decision(
+            Action.RECORD,
+            f"{fingerprint.severity.value} severity is below the error wake floor",
+        )
     if fingerprint.state.busy:
         return Decision(Action.ABSORBED, f"work already in flight ({fingerprint.state})")
     if fingerprint.state in (WorkState.DROPPED, WorkState.CLOSED_HUMAN):
         return Decision(Action.SUPPRESSED, f"fingerprint was {fingerprint.state} by a human")
-    if config.autonomy == Autonomy.OBSERVE:
-        return Decision(Action.RECORD, "observe mode: issues only, agents never fire")
 
-    if fingerprint.severity.rank >= 4:  # critical wakes immediately
-        return Decision(Action.WAKE, "critical severity")
-    if fingerprint.occurrences >= config.immediate_count:
-        return Decision(
-            Action.WAKE,
-            f"reached {fingerprint.occurrences} occurrences (threshold {config.immediate_count})",
-        )
+    reason = _wake_reason(fingerprint, config, rate_in_window)
+    if reason is not None:
+        return Decision(Action.WAKE, reason)
     return Decision(
         Action.RECORD, f"{fingerprint.occurrences}/{config.immediate_count} occurrences"
     )
+
+
+def _wake_reason(fingerprint: Fingerprint, config: ServiceYaml, rate_in_window: int) -> str | None:
+    """A non-None reason means the fingerprint should wake."""
+    if fingerprint.severity.rank >= 4:  # critical wakes immediately
+        return "critical severity"
+    if fingerprint.occurrences >= config.immediate_count:
+        return f"reached {fingerprint.occurrences} occurrences (threshold {config.immediate_count})"
+    if rate_in_window >= config.rate_per_min:
+        return f"burst: {rate_in_window} errors in the rate window (cap {config.rate_per_min})"
+    return None

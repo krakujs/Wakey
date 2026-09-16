@@ -7,6 +7,7 @@ from pathlib import Path
 
 from wakey.core.models import Fingerprint, Severity, WorkState
 from wakey.core.storage import SQLiteStorage
+from wakey.forge.port import ConsoleForge
 from wakey.policy.scheduler import VerificationScheduler
 from wakey.policy.verification import WatchInputs
 from wakey.policy.watcher import VerificationWatcher
@@ -30,7 +31,7 @@ def test_rounds_and_crash_tolerance(tmp_path: Path) -> None:
             occurrences_after_fix=0, grace_window_elapsed=True, fix_deployed_to_environment=True
         )
 
-    watcher = VerificationWatcher(storage, forge=None, grace_inputs=grace_inputs)
+    watcher = VerificationWatcher(storage, ConsoleForge(), grace_inputs=grace_inputs)
 
     clock = {"t": 0.0}
     sleeps: list[float] = []
@@ -64,7 +65,7 @@ def test_crash_in_pass_reported_not_fatal(tmp_path: Path) -> None:
         return WatchInputs(occurrences_after_fix=0, grace_window_elapsed=True)
 
     scheduler = VerificationScheduler(
-        ExplodingWatcher(storage, forge=None, grace_inputs=inputs_for),
+        ExplodingWatcher(storage, ConsoleForge(), grace_inputs=inputs_for),
         interval_seconds=1,
     )
     counts = scheduler.run_rounds(rounds=2)

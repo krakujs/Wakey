@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wakey"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Wakey — the self-hosted AI SRE that watches your services: log in, ticket out, root cause, suggested fix."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "The Wakey Authors" }]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
@@ -34,7 +34,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Encrypted-at-rest credentials (GitHub App private keys, webhook secrets)
+# when WAKEY_MASTER_KEY is configured (SEC-4 / E10-T3):
+secrets = ["cryptography>=42,<47"]
 dev = [
+    "cryptography>=42,<47",
     "pytest>=8.3,<10.0",
     "pytest-timeout>=2.3,<3.0",
     "pytest-xdist>=3.6,<4.0",
@@ -46,6 +50,9 @@ dev = [
 
 [project.urls]
 Documentation = "https://github.com/wakey-ai/wakey/tree/main/docs"
+
+[project.scripts]
+wakey = "wakey.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wakey"]
@@ -66,6 +73,11 @@ ignore = [
 python_version = "3.12"
 strict = true
 files = ["src/wakey"]
+
+[[tool.mypy.overrides]]
+# optional dependency: imported lazily only when OIDC verification is used
+module = ["cryptography.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

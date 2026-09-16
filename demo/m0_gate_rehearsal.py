@@ -22,6 +22,9 @@ from wakey.core.server import create_app
 from wakey.core.storage import SQLiteStorage
 from wakey.forge.github import GitHubAdapter, GitHubConfig
 from wakey.forge.simulator import GitHubSimulator, serve_in_background
+from wakey.ingest.pipeline import IngestPipeline
+from wakey.ingest.worker import DeliveryWorker
+from wakey.security.redaction import RedactionEngine
 
 SIM_TOKEN = "sim-token"  # simulated credential — the only "key" involved
 KEY = "wk_demo_service_key"
@@ -45,18 +48,27 @@ def build_stack(tmp_path: Path) -> tuple[TestClient, GitHubSimulator, object]:
     )
 
     app = create_app(Settings(), storage, MetricsRegistry(), forge=adapter)
-    return TestClient(app), sim, server
+    # production-shaped worker: same durable delivery path as `serve`
+    pipeline = IngestPipeline(storage, adapter)
+    worker = DeliveryWorker(storage, pipeline, RedactionEngine())
+    return TestClient(app), sim, server, worker
+
+
+def drain(worker: DeliveryWorker) -> None:
+    while worker.process_next():
+        pass
 
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
-        client, sim, server = build_stack(Path(tmp))
+        client, sim, server, worker = build_stack(Path(tmp))
 
         error = "ERROR: connection refused to payments-db:5432 for order 84d8e79a"
         response = client.post(
             f"/ingest/{KEY}", content="\n".join([error] * 3)
         ).json()
-        assert response["outcomes"].get("ticketed") == 1, response
+        assert response["accepted"] is True, response
+        drain(worker)
         assert len(sim.issues) == 1, "simulator must hold exactly one created issue"
 
         issue = sim.issues[0]
@@ -65,8 +77,9 @@ def main() -> int:
         assert issue["state"] == "open"
 
         # in-flight suppression through the real adapter path
-        more = client.post(f"/ingest/{KEY}", content=error).json()
-        assert "ticketed" not in more["outcomes"]
+        more = client.post(f"/ingest/{KEY}", content=error)
+        assert more.status_code == 202
+        drain(worker)
         assert len(sim.issues) == 1
 
         # comment flow: RCA-style update lands on the simulated issue

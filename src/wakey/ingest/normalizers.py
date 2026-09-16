@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import ValidationError
+
 from wakey.core.models import LogEvent, Severity, utcnow
 
 _TIMESTAMP_KEYS = ("timestamp", "time", "ts", "@timestamp")
@@ -107,36 +109,49 @@ def _first_key(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
 
 
 def _event_from_json(data: dict[str, Any], ctx: EventContext, index: int) -> LogEvent:
+    """Build one event from a structured mapping.
+
+    Raises ``ValueError`` on fields that cannot be coerced — the caller
+    dead-letters that line and keeps processing valid siblings (R-02).
+    """
     message = _first_key(data, _MESSAGE_KEYS)
     if message is None or not str(message).strip():
         message = json.dumps(data)
     severity_raw = _first_key(data, _SEVERITY_KEYS)
+    if severity_raw is not None and not isinstance(severity_raw, (str, int)):
+        raise ValueError(f"severity field must be text or int, got {type(severity_raw).__name__}")
     severity = map_severity(severity_raw) if severity_raw is not None else Severity.INFO
     canonical = json.dumps(data, sort_keys=True)
     event_id = _first_key(data, ("id", "event_id")) or _stable_event_id(
         ctx.service, ctx.source, ctx.delivery_id, index, canonical
     )
-    attributes = {
-        k: str(v)
-        for k, v in data.items()
-        if k not in _MESSAGE_KEYS + _SEVERITY_KEYS + _TIMESTAMP_KEYS
-    }
-    return LogEvent(
-        id=str(event_id),
-        ts=_parse_timestamp(_first_key(data, _TIMESTAMP_KEYS), ctx.fallback_ts or utcnow()),
-        service=ctx.service,
-        environment=ctx.environment,
-        severity=severity,
-        message=str(message),
-        source=ctx.source,
-        trace_id=(str(v) if (v := _first_key(data, _TRACE_KEYS)) is not None else None),
-        request_id=(str(v) if (v := _first_key(data, _REQUEST_KEYS)) is not None else None),
-        attributes=attributes,
-    )
+    try:
+        attributes = {
+            k: str(v)
+            for k, v in data.items()
+            if k not in _MESSAGE_KEYS + _SEVERITY_KEYS + _TIMESTAMP_KEYS
+        }
+        return LogEvent(
+            id=str(event_id),
+            ts=_parse_timestamp(_first_key(data, _TIMESTAMP_KEYS), ctx.fallback_ts or utcnow()),
+            service=ctx.service,
+            environment=ctx.environment,
+            severity=severity,
+            message=str(message),
+            source=ctx.source,
+            trace_id=(str(v) if (v := _first_key(data, _TRACE_KEYS)) is not None else None),
+            request_id=(str(v) if (v := _first_key(data, _REQUEST_KEYS)) is not None else None),
+            attributes=attributes,
+        )
+    except ValidationError as exc:
+        raise ValueError(f"invalid event field: {exc}") from exc
 
 
 def _looks_like_json(line: str) -> bool:
-    return line.startswith("{") or line.startswith("[")
+    # Objects only: log lines beginning with "[" (plain text, redaction
+    # markers, arrays) are legitimate non-JSON content and must flow to
+    # the plain-text path, not the dead-letter path.
+    return line.startswith("{")
 
 
 def _parse_logfmt_line(line: str) -> dict[str, str] | None:
@@ -150,17 +165,50 @@ def _parse_logfmt_line(line: str) -> dict[str, str] | None:
     return data
 
 
+_TRACEBACK_HEAD = re.compile(r"^Traceback \(most recent call last\):")
+_INDENTED_FRAME = re.compile(r"^\s")
+
+
+def _reassemble_traceback(lines: list[str], start: int) -> tuple[str, int]:
+    """Consume one traceback block starting at ``start``; return (block, next index).
+
+    Plain-text logs arrive line-by-line, but both the traceback parser and
+    multiline redaction (a PEM block inside an exception, say) need the
+    block as one message (R-04). Shape: the ``Traceback (...)`` head, the
+    indented ``File ...`` frames, and the first following non-indented
+    exception line.
+    """
+    block = [lines[start]]
+    index = start + 1
+    while index < len(lines) and _INDENTED_FRAME.match(lines[index]):
+        block.append(lines[index])
+        index += 1
+    if index < len(lines) and not _TRACEBACK_HEAD.match(lines[index]):
+        block.append(lines[index])  # the exception line closes the block
+        index += 1
+    return "\n".join(block), index
+
+
 def parse_events(raw: str, ctx: EventContext) -> ParseOutcome:
     """Normalize a raw payload (any mix of JSON lines, logfmt, plain text)."""
     outcome = ParseOutcome()
     fallback = ctx.fallback_ts or utcnow()
+    lines = raw.splitlines()
 
-    for index, line in enumerate(raw.splitlines()):
-        stripped = line.strip()
+    index = 0
+    while index < len(lines):
+        line_number = index
+        index += 1
+        stripped = lines[line_number].strip()
         if not stripped:
             continue
         if len(stripped) > _DEAD_LETTER_MAX:
             outcome.dead_letters.append((stripped[:200], f"line exceeds {_DEAD_LETTER_MAX} bytes"))
+            continue
+        if _TRACEBACK_HEAD.match(stripped):
+            # back up: the block reassembler owns lines from the head onward
+            block, index = _reassemble_traceback(lines, line_number)
+            outcome.events.append(_plain_text_event(block, ctx, line_number, fallback))
             continue
         if _looks_like_json(stripped):
             try:
@@ -169,26 +217,34 @@ def parse_events(raw: str, ctx: EventContext) -> ParseOutcome:
                 outcome.dead_letters.append((stripped, f"unparseable JSON: {exc.msg}"))
                 continue
             if isinstance(data, dict):
-                outcome.events.append(_event_from_json(data, ctx, index))
+                try:
+                    outcome.events.append(_event_from_json(data, ctx, line_number))
+                except ValueError as exc:
+                    outcome.dead_letters.append((stripped[:200], str(exc)))
             else:
                 outcome.dead_letters.append((stripped, "JSON must be an object"))
             continue
         logfmt = _parse_logfmt_line(stripped)
         if logfmt is not None:
-            outcome.events.append(_event_from_json(logfmt, ctx, index))
+            try:
+                outcome.events.append(_event_from_json(logfmt, ctx, line_number))
+            except ValueError as exc:
+                outcome.dead_letters.append((stripped[:200], str(exc)))
             continue
-        severity = Severity.ERROR if stripped.startswith("Traceback") else Severity.INFO
-        if re.search(r"\b(ERROR|CRITICAL|FATAL|PANIC)\b", stripped):
-            severity = Severity.ERROR
-        outcome.events.append(
-            LogEvent(
-                id=_stable_event_id(ctx.service, ctx.source, ctx.delivery_id, index, stripped),
-                ts=fallback,
-                service=ctx.service,
-                environment=ctx.environment,
-                severity=severity,
-                message=stripped,
-                source=ctx.source,
-            )
-        )
+        outcome.events.append(_plain_text_event(stripped, ctx, line_number, fallback))
     return outcome
+
+
+def _plain_text_event(message: str, ctx: EventContext, index: int, fallback: datetime) -> LogEvent:
+    severity = Severity.ERROR if _TRACEBACK_HEAD.match(message) else Severity.INFO
+    if re.search(r"\b(ERROR|CRITICAL|FATAL|PANIC)\b", message):
+        severity = Severity.ERROR
+    return LogEvent(
+        id=_stable_event_id(ctx.service, ctx.source, ctx.delivery_id, index, message.strip()),
+        ts=fallback,
+        service=ctx.service,
+        environment=ctx.environment,
+        severity=severity,
+        message=message,
+        source=ctx.source,
+    )

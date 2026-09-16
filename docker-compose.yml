@@ -8,10 +8,21 @@ services:
     container_name: wakey
     restart: unless-stopped
     ports:
-      - "8477:8477"
+      # Loopback only: the dashboard is unauthenticated until WF-01/WF-12 lands.
+      - "127.0.0.1:8477:8477"
     environment:
       WAKEY_MASTER_KEY: ${WAKEY_MASTER_KEY:-}
       WAKEY_PORT: 8477
+      WAKEY_GITHUB_TOKEN: ${WAKEY_GITHUB_TOKEN:-}
+      WAKEY_GITHUB_REPO: ${WAKEY_GITHUB_REPO:-}
+      WAKEY_ALLOWED_REPOS: ${WAKEY_ALLOWED_REPOS:-}
+      WAKEY_LLM_BASE_URL: ${WAKEY_LLM_BASE_URL:-}
+      WAKEY_LLM_API_KEY: ${WAKEY_LLM_API_KEY:-}
+      WAKEY_LLM_MODEL: ${WAKEY_LLM_MODEL:-glm-4.5-air}
+      WAKEY_LOG_LEVEL: ${WAKEY_LOG_LEVEL:-INFO}
+      WAKEY_AUTHORIZED_USERS: ${WAKEY_AUTHORIZED_USERS:-}
+      WAKEY_SELF_WATCH: ${WAKEY_SELF_WATCH:-false}
+      WAKEY_RETENTION_DAYS: ${WAKEY_RETENTION_DAYS:-30}
     volumes:
       - wakey-data:/var/lib/wakey
 

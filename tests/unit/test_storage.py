@@ -9,6 +9,7 @@ import pytest
 
 from wakey.core.models import (
     AuditEvent,
+    Delivery,
     Fingerprint,
     LogEvent,
     Service,
@@ -48,9 +49,14 @@ def test_ready_and_idempotent_migration(tmp_path: object) -> None:
 
 
 def test_delivery_dedup(storage: SQLiteStorage) -> None:
-    assert storage.record_delivery("d-1") is True
-    assert storage.record_delivery("d-1") is False
-    assert storage.record_delivery("d-2") is True
+    def make(delivery_id: str, service: str = "payments-api") -> Delivery:
+        return Delivery(service=service, delivery_id=delivery_id, payload="raw")
+
+    assert storage.save_delivery(make("d-1")) is True
+    assert storage.save_delivery(make("d-1")) is False  # replay, even later
+    assert storage.save_delivery(make("d-2")) is True
+    # identity is namespaced per service: same id, different service, both real
+    assert storage.save_delivery(make("d-1", service="other-api")) is True
 
 
 def test_occurrence_accumulation_preserves_first_seen(storage: SQLiteStorage) -> None:
@@ -109,3 +115,20 @@ def test_log_event_and_audit(storage: SQLiteStorage) -> None:
         )
     )
     assert storage.check_ready()
+
+
+def test_audit_chain_detects_tampering(storage: SQLiteStorage) -> None:
+    storage.record_audit(AuditEvent(actor="a", action="one", subject="s"))
+    storage.record_audit(AuditEvent(actor="b", action="two", subject="s"))
+    storage.record_audit(AuditEvent(actor="c", action="three", subject="s"))
+
+    ok, checked = storage.verify_audit_chain()
+    assert ok and checked == 3
+
+    # tamper: rewrite a middle row in place — the chain must break
+    with storage._lock, storage._conn:  # noqa: SLF001
+        storage._conn.execute(  # noqa: SLF001
+            "UPDATE audit SET action = 'forged' WHERE action = 'two'"
+        )
+    ok, _ = storage.verify_audit_chain()
+    assert not ok, "a modified audit row must break the hash chain"

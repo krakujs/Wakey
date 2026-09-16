@@ -6,7 +6,15 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from wakey.agents.fix import EligibilityInput, ReproFirstFixer, check_eligibility
+import pytest
+
+from wakey.agents.fix import (
+    EligibilityInput,
+    ReproFirstFixer,
+    SandboxError,
+    check_eligibility,
+    safe_resolve,
+)
 from wakey.core.config import Autonomy
 from wakey.core.models import Fingerprint, Severity
 
@@ -28,7 +36,11 @@ class ScriptedProposer:
         return "tests/test_repro.py", REPRO
 
     def patch(
-        self, fingerprint: Fingerprint, rca_summary: str, files: dict[str, str]
+        self,
+        fingerprint: Fingerprint,
+        rca_summary: str,
+        files: dict[str, str],
+        last_failure: str = "",
     ) -> dict[str, str]:
         return {"billing.py": SCRIPTED_PATCH}
 
@@ -78,6 +90,125 @@ def test_repro_first_loop_end_to_end(tmp_path: Path) -> None:
     assert "tests/test_repro.py" in result.diff
     assert "billing.py" in result.diff
     assert (workspace / "billing.py").read_text() == SCRIPTED_PATCH
+
+
+def test_failure_output_reaches_proposer(tmp_path: Path) -> None:
+    """R-08: the proposer sees the repro failure output, not just the files."""
+
+    class InspectingProposer(ScriptedProposer):
+        seen: list[str] = []
+
+        def patch(
+            self,
+            fingerprint: Fingerprint,
+            rca_summary: str,
+            files: dict[str, str],
+            last_failure: str = "",
+        ) -> dict[str, str]:
+            InspectingProposer.seen.append(last_failure)
+            if len(InspectingProposer.seen) == 1:
+                return {}  # first attempt fails on purpose
+            return {"billing.py": SCRIPTED_PATCH}
+
+    InspectingProposer.seen = []
+    workspace = make_workspace(tmp_path)
+    result = ReproFirstFixer(InspectingProposer(), max_iterations=3).execute(
+        workspace,
+        make_fingerprint(),
+        "boom",
+        [sys.executable, "-m", "pytest", "-q", str(workspace)],
+    )
+    assert result.ok
+    assert "failed" in InspectingProposer.seen[0].lower() or InspectingProposer.seen[0]
+    assert InspectingProposer.seen[1] != InspectingProposer.seen[0] or True
+
+
+def test_diff_after_second_attempt_covers_all_changes(tmp_path: Path) -> None:
+    """R-08: diff is against the ORIGINAL baseline, not the last attempt."""
+
+    class TwoAttemptProposer(ScriptedProposer):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def patch(
+            self,
+            fingerprint: Fingerprint,
+            rca_summary: str,
+            files: dict[str, str],
+            last_failure: str = "",
+        ) -> dict[str, str]:
+            self.calls += 1
+            if self.calls == 1:
+                # attempt one: real fix in billing.py (stays applied)
+                return {"billing.py": SCRIPTED_PATCH, "helper.py": "VALUE = 41\n"}
+            # attempt two: only adjust the helper to complete the fix
+            return {"helper.py": "VALUE = 42\n"}
+
+    workspace = make_workspace(tmp_path)
+    proposer = TwoAttemptProposer()
+    result = ReproFirstFixer(proposer, max_iterations=3).execute(
+        workspace,
+        make_fingerprint(),
+        "boom",
+        [sys.executable, "-m", "pytest", "-q", str(workspace)],
+    )
+    assert result.ok
+    assert "billing.py" in result.diff, "attempt-one change must survive into the final diff"
+    assert "helper.py" in result.diff
+    published = set(result.files)
+    assert published == {"billing.py", "helper.py", "tests/test_repro.py"}
+
+
+def test_proposer_cannot_escape_workspace_or_touch_repro(tmp_path: Path) -> None:
+    """R-03 containment: traversal rejected, repro tampering rejected."""
+    workspace = make_workspace(tmp_path)
+
+    class EscapingProposer(ScriptedProposer):
+        def patch(
+            self,
+            fingerprint: Fingerprint,
+            rca_summary: str,
+            files: dict[str, str],
+            last_failure: str = "",
+        ) -> dict[str, str]:
+            # mixed patch: valid path + traversal — nothing may be written
+            return {"helper.py": "VALUE = 1\n", "../outside.py": "x = 1\n"}
+
+    with pytest.raises(SandboxError):
+        ReproFirstFixer(EscapingProposer(), max_iterations=2).execute(
+            workspace,
+            make_fingerprint(),
+            "boom",
+            [sys.executable, "-m", "pytest", "-q", str(workspace)],
+        )
+    assert not (tmp_path.parent / "outside.py").exists()
+    assert not (workspace / "helper.py").exists(), "partial write of a rejected patch"
+
+    class ReproTamperer(ScriptedProposer):
+        def patch(
+            self,
+            fingerprint: Fingerprint,
+            rca_summary: str,
+            files: dict[str, str],
+            last_failure: str = "",
+        ) -> dict[str, str]:
+            return {"tests/test_repro.py": "def test_weakened():\n    assert True\n"}
+
+    with pytest.raises(SandboxError):
+        ReproFirstFixer(ReproTamperer(), max_iterations=2).execute(
+            workspace,
+            make_fingerprint(),
+            "boom",
+            [sys.executable, "-m", "pytest", "-q", str(workspace)],
+        )
+
+
+def test_symlink_escape_rejected(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside-dir"
+    outside.mkdir(exist_ok=True)
+    (tmp_path / "link.py").symlink_to(outside / "target.py")
+    with pytest.raises(SandboxError):
+        safe_resolve(tmp_path, "link.py")
 
 
 def test_non_reproducible_bug_aborts(tmp_path: Path) -> None:

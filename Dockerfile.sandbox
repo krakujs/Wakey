@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Image for the E10-T2 sandbox gate (make gate-sandbox): wakey + pytest only.
+# The container's controls (no network, memory/CPU/pids caps) are applied by
+# the `docker run` invocation in the Makefile, not by this image.
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+
+RUN pip install --no-cache-dir . pytest pytest-timeout \
+    && useradd --system --create-home wakey \
+    && chown -R wakey:wakey /app
+
+USER wakey

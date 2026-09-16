@@ -5,7 +5,7 @@ BIN   := .venv/bin
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install check format test headers headers-check clean
+.PHONY: help install check format test headers headers-check clean gate-sandbox image-dev
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[33m%-16s\033[0m %s\n", $$1, $$2}'
@@ -47,3 +47,16 @@ demo-m0: ## M0 gate rehearsal with simulated GitHub (no live calls)
 
 bench: ## resource benchmark vs NFR-6 budgets (host-safe, synthetic)
 	.venv/bin/python scripts/bench_resources.py
+
+image-dev: ## build the local server image used by the sandbox gate
+	docker build -t wakey:dev .
+
+image-sandbox: ## build the sandbox-gate image (wakey + pytest)
+	docker build -f Dockerfile.sandbox -t wakey:sandbox .
+
+gate-sandbox: ## E10-T2 sandbox gate: negative tests inside a capped, network-less container
+	docker build -f Dockerfile.sandbox -t wakey:sandbox .
+	docker run --rm --network none --memory 512m --cpus 1 --pids-limit 64 \
+		--read-only --tmpfs /tmp:rw,size=64m \
+		-e SANDBOX_GATE=1 -v $(PWD)/tests:/app/tests:ro -w /app wakey:sandbox \
+		python -m pytest tests/sandbox -q -p no:cacheprovider

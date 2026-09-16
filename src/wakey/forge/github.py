@@ -9,6 +9,7 @@ Errors are typed so the pipeline can distinguish "misconfigured" from
 
 from __future__ import annotations
 
+import base64
 import time
 
 import httpx
@@ -61,11 +62,17 @@ class GitHubAdapter:
         self._client = client or httpx.Client(timeout=15)
         self._max_retries = config.max_retries
 
-    def _request(self, method: str, path: str, json_body: object) -> httpx.Response:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        json_body: object,
+        accept: str = "application/vnd.github+json",
+    ) -> httpx.Response:
         url = f"{self._api_base}{path}"
         headers = {
             "Authorization": f"Bearer {self._token}",
-            "Accept": "application/vnd.github+json",
+            "Accept": accept,
             "X-GitHub-Api-Version": "2022-11-28",
         }
         for attempt in range(self._max_retries + 1):
@@ -96,12 +103,104 @@ class GitHubAdapter:
             "POST", f"/repos/{self._repo}/issues/{ticket.issue_id}/comments", {"body": body}
         )
 
-    def open_draft_proposal(self, branch: str, title: str, body: str) -> TicketRef:
-        """Draft PR from an existing branch (E8-T5); never merged by Wakey."""
+    def open_draft_proposal(self, branch: str, title: str, body: str, base: str) -> TicketRef:
+        """Draft PR from a published branch (E8-T5/R-06); never merged by Wakey."""
         response = self._request(
             "POST",
             f"/repos/{self._repo}/pulls",
-            {"title": title, "head": branch, "base": "main", "draft": True, "body": body},
+            {"title": title, "head": branch, "base": base, "draft": True, "body": body},
         )
         data = response.json()
         return TicketRef(issue_id=str(data["number"]), url=data["html_url"])
+
+    # --- branch publication (R-06) -------------------------------------------
+
+    def default_branch(self) -> str:
+        response = self._request("GET", f"/repos/{self._repo}", None)
+        return str(response.json()["default_branch"])
+
+    def create_branch(self, branch: str, base: str) -> None:
+        ref = self._request("GET", f"/repos/{self._repo}/git/ref/heads/{base}", None).json()
+        base_sha = ref["object"]["sha"]
+        self._request(
+            "POST",
+            f"/repos/{self._repo}/git/refs",
+            {"ref": f"refs/heads/{branch}", "sha": base_sha},
+        )
+
+    def commit_files(self, branch: str, message: str, files: dict[str, str]) -> str:
+        """Publish full file contents as one commit on ``branch``.
+
+        Git data API: blobs → tree (based on the branch tip) → commit →
+        fast-forward the ref. ``force`` is always False: no force-pushes.
+        """
+        tip = self._request("GET", f"/repos/{self._repo}/git/ref/heads/{branch}", None).json()[
+            "object"
+        ]["sha"]
+        base_tree = self._request("GET", f"/repos/{self._repo}/git/commits/{tip}", None).json()[
+            "tree"
+        ]["sha"]
+        tree_items = []
+        for path, content in files.items():
+            blob = self._request(
+                "POST",
+                f"/repos/{self._repo}/git/blobs",
+                {"content": content, "encoding": "utf-8"},
+            ).json()
+            tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": blob["sha"]})
+        tree = self._request(
+            "POST",
+            f"/repos/{self._repo}/git/trees",
+            {"base_tree": base_tree, "tree": tree_items},
+        ).json()
+        commit = self._request(
+            "POST",
+            f"/repos/{self._repo}/git/commits",
+            {"message": message, "tree": tree["sha"], "parents": [tip]},
+        ).json()
+        self._request(
+            "PATCH",
+            f"/repos/{self._repo}/git/refs/heads/{branch}",
+            {"sha": commit["sha"], "force": False},
+        )
+        return str(commit["sha"])
+
+    def fetch_file(self, path: str) -> str | None:
+        """Fetch file content from the repo root (E3-T6 config reload).
+
+        Uses the contents API (base64 JSON) so local simulators and the
+        real API behave identically.
+        """
+        try:
+            response = self._request(
+                "GET", f"/repos/{self._repo}/contents/{path.lstrip('/')}", None
+            )
+        except ForgeError as exc:
+            if "404" in str(exc):
+                return None
+            raise
+        data = response.json()
+        content = data.get("content", "")
+        encoding = data.get("encoding", "")
+        if encoding == "base64":
+            return base64.b64decode(content).decode("utf-8")
+        return str(content)
+
+    # --- lifecycle effects (R-09) ----------------------------------------------
+
+    def close_ticket(self, ticket: TicketRef, comment: str | None = None) -> None:
+        if comment:
+            self.add_comment(ticket, comment)
+        self._request("PATCH", f"/repos/{self._repo}/issues/{ticket.issue_id}", {"state": "closed"})
+
+    def reopen_ticket(self, ticket: TicketRef, comment: str | None = None) -> None:
+        if comment:
+            self.add_comment(ticket, comment)
+        self._request("PATCH", f"/repos/{self._repo}/issues/{ticket.issue_id}", {"state": "open"})
+
+    def add_label(self, ticket: TicketRef, label: str) -> None:
+        self._request(
+            "POST",
+            f"/repos/{self._repo}/issues/{ticket.issue_id}/labels",
+            {"labels": [label]},
+        )

@@ -30,7 +30,11 @@ class ScriptedProposer:
         return "tests/test_repro.py", REPRO
 
     def patch(
-        self, fingerprint: Fingerprint, rca_summary: str, files: dict[str, str]
+        self,
+        fingerprint: Fingerprint,
+        rca_summary: str,
+        files: dict[str, str],
+        last_failure: str = "",
     ) -> dict[str, str]:
         return {"billing.py": SCRIPTED_PATCH}
 
@@ -74,6 +78,8 @@ def test_fix_flow_delivers_end_to_end(tmp_path: Path) -> None:
     assert "billing.py" in result.diff
     assert len(forge.proposals) == 1
     assert forge.proposals[0]["title"].startswith("[wakey] Fix for fp:")
+    # R-06: the tested files are committed to the published branch
+    assert forge.branches["wakey/fix-3f9a1b2c"]["billing.py"] == SCRIPTED_PATCH
 
 
 def test_fix_flow_refuses_below_floor(tmp_path: Path) -> None:

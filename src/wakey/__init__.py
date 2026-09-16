@@ -5,4 +5,4 @@ Wakes up on production errors: log in, ticket out, root cause, suggested fix.
 Never merges; suggests. See docs/ for the binding specs.
 """
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"

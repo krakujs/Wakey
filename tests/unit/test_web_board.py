@@ -19,8 +19,17 @@ from wakey.web.board import render_board_html
 FP_HASH = "fp3f9ac2deadbeef"
 
 
-def make_client(storage: SQLiteStorage) -> TestClient:
-    return TestClient(create_app(Settings(), storage, MetricsRegistry(), forge=ConsoleForge()))
+def make_client(storage: SQLiteStorage, follow_redirects: bool = True) -> TestClient:
+    app = create_app(Settings(), storage, MetricsRegistry(), forge=ConsoleForge())
+    return TestClient(app, follow_redirects=follow_redirects)
+
+
+def login(client: TestClient) -> None:
+    """Consume a fresh setup token so the client holds an admin session (R-07)."""
+    token, _ = client.app.state.auth.ensure_setup_token()  # type: ignore[attr-defined]
+    response = client.post("/login", data={"token": token}, follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "/board"
 
 
 def make_fingerprint(state: WorkState = WorkState.OPEN) -> Fingerprint:
@@ -42,7 +51,9 @@ def seed(storage: SQLiteStorage) -> None:
 def test_board_lists_active_fingerprints() -> None:
     storage = SQLiteStorage(":memory:")
     seed(storage)
-    response = make_client(storage).get("/board")
+    client = make_client(storage)
+    login(client)
+    response = client.get("/board", follow_redirects=False)
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
@@ -55,7 +66,36 @@ def test_board_lists_active_fingerprints() -> None:
 
 def test_home_never_500s() -> None:
     client = make_client(SQLiteStorage(":memory:"))
-    assert client.get("/").status_code in (200, 404)
+    assert client.get("/").status_code in (200, 302, 404)
+
+
+def test_anonymous_board_redirects_to_login() -> None:
+    """R-07 closure: no anonymous operational data access."""
+    storage = SQLiteStorage(":memory:")
+    seed(storage)
+    client = make_client(storage, follow_redirects=False)
+    response = client.get("/board")
+    assert response.status_code == 302
+    assert response.headers["location"] == "/login"
+
+
+def test_login_with_setup_token_grants_board_access() -> None:
+    storage = SQLiteStorage(":memory:")
+    seed(storage)
+    client = make_client(storage)
+    token, _ = client.app.state.auth.ensure_setup_token()  # type: ignore[attr-defined]
+    response = client.post("/login", data={"token": token}, follow_redirects=False)
+    assert response.status_code == 302
+    cookie = response.headers["set-cookie"]
+    assert "httponly" in cookie.lower() and "samesite=lax" in cookie.lower()
+    assert client.get("/board", follow_redirects=False).status_code == 200
+
+
+def test_bad_token_rejected() -> None:
+    client = make_client(SQLiteStorage(":memory:"))
+    client.app.state.auth.ensure_setup_token()  # type: ignore[attr-defined]
+    response = client.post("/login", data={"token": "WAKE-XXXX-YYYY-ZZZZ"})
+    assert response.status_code == 401
 
 
 def test_render_board_html_empty_renders_zero_active() -> None:
@@ -74,7 +114,8 @@ def test_render_board_html_colors_states() -> None:
         make_fingerprint(state=WorkState.NEW),
     ]
     html = render_board_html(rows, generated_at="2026-09-16T00:00:00+00:00")
-    assert html.count("#ffb020") == 2  # investigating + fixing
+    # count only the state-cell spans, not palette literals in the CSS block
+    assert html.count('color:#ffb020">') == 2  # investigating + fixing
     assert "#2fd67b" in html  # verified-closed
     assert "wakey board — 4 active" in html
 
@@ -89,9 +130,12 @@ def test_root_redirects_to_board(tmp_path) -> None:
 
 def test_settings_page_renders_without_secrets(tmp_path: Path) -> None:
     storage = SQLiteStorage(tmp_path / "wakey.db")
-    client = TestClient(
-        create_app(Settings(llm_api_key="secret"), storage, MetricsRegistry(), forge=ConsoleForge())
+    app = create_app(
+        Settings(llm_api_key="secret"), storage, MetricsRegistry(), forge=ConsoleForge()
     )
+    client = TestClient(app)
+    token, _ = app.state.auth.ensure_setup_token()
+    client.post("/login", data={"token": token}, follow_redirects=False)
     response = client.get("/settings")
     assert response.status_code == 200
     assert "configured" in response.text

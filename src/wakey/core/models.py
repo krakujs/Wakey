@@ -123,6 +123,49 @@ class Fingerprint(BaseModel):
     state: WorkState = WorkState.NEW
     ticket_issue_id: str | None = None
     ticket_url: str | None = None
+    # DB-truth throttles and lifecycle anchors (R-05/R-09):
+    commented_at_occurrences: int = Field(default=0, ge=0)
+    last_comment_at: datetime | None = None
+    verification_started_at: datetime | None = None
+    verification_start_occurrences: int = Field(default=0, ge=0)
+    chronic: bool = False
+    proposal_issue_id: str | None = None
+    proposal_url: str | None = None
+    proposal_branch: str | None = None
+
+
+class DeliveryState(StrEnum):
+    """Durable ingest delivery states (WF-02 §7, R-02).
+
+    A delivery is ``pending`` until its events are fully persisted and
+    dispatched; a crash between those points leaves it recoverable.
+    """
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"  # dead-lettered: attempts exhausted
+
+
+class Delivery(BaseModel):
+    """One accepted ingest payload awaiting durable processing (R-02)."""
+
+    service: str = Field(min_length=1)
+    delivery_id: str = Field(min_length=1)
+    state: DeliveryState = DeliveryState.PENDING
+    payload: str = ""  # redacted raw body; replayable after restart
+    attempts: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class DeployEvent(BaseModel):
+    """One recorded deployment of a service (WF-08 deploy-aware verification)."""
+
+    service: str = Field(min_length=1)
+    environment: str = Field(min_length=1)
+    sha: str = Field(min_length=1)
+    deployed_at: datetime = Field(default_factory=utcnow)
 
 
 class Service(BaseModel):
@@ -137,6 +180,7 @@ class Service(BaseModel):
     environment: str = "prod"
     ingest_key_hash: str = Field(min_length=8)
     webhook_secret: str | None = None
+    config_json: str = "{}"  # canonical ServiceYaml persisted at registration (E3-T6)
 
 
 class AuditEvent(BaseModel):

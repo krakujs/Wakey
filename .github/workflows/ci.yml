@@ -47,7 +47,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev]"
       # Host-safe caps: per-test timeout (pyproject) + ≤4 workers (eng-standards §3)
-      - run: pytest -n 4
+      # Coverage floor enforced in CI (R-11): below 90% fails the build.
+      - run: pytest -n 4 --cov=wakey --cov-report=term-missing --cov-fail-under=90
 
   image:
     runs-on: ubuntu-latest

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from wakey.core.models import LogEvent
+
 FAILURE_MARKER = "[REDACTION_FAILURE]"
 MAX_PATTERN_LENGTH = 500
 
@@ -101,3 +103,34 @@ class RedactionEngine:
         if count:
             hits.append("credit_card")
         return result
+
+
+def redact_text(text: str, engine: RedactionEngine) -> str:
+    """Redact one externally supplied string; fail-closed to the marker."""
+    return engine.redact(text)[0]
+
+
+def sanitize_log_event(event: LogEvent, engine: RedactionEngine) -> LogEvent:
+    """Second-pass sanitization of every externally supplied field (R-04).
+
+    Contract: *no* string that came from outside may reach durable storage
+    or a model prompt unredacted — message, trace/request ids, attribute
+    keys and values included. The first pass (whole-payload, multiline-
+    capable) runs at the ingest boundary; this pass runs per normalized
+    event so fields split out of structured payloads are covered too.
+    """
+
+    message, _ = engine.redact(event.message)
+    trace_id = engine.redact(event.trace_id)[0] if event.trace_id else None
+    request_id = engine.redact(event.request_id)[0] if event.request_id else None
+    attributes = {
+        engine.redact(key)[0]: engine.redact(value)[0] for key, value in event.attributes.items()
+    }
+    return event.model_copy(
+        update={
+            "message": message,
+            "trace_id": trace_id,
+            "request_id": request_id,
+            "attributes": attributes,
+        }
+    )
