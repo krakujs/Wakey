@@ -135,6 +135,9 @@ class Storage(ABC):
         """Persist the fingerprint exactly as given (state transitions, ticket refs)."""
 
     @abstractmethod
+    def list_active_fingerprints(self, service: str | None = None) -> list[Fingerprint]: ...
+
+    @abstractmethod
     def save_log_event(self, event: LogEvent) -> None: ...
 
     @abstractmethod
@@ -324,6 +327,42 @@ class SQLiteStorage(Storage):
                 "ticket_url=excluded.ticket_url",
                 _fingerprint_params(fingerprint),
             )
+
+    def list_active_fingerprints(self, service: str | None = None) -> list[Fingerprint]:
+        """Fingerprints not closed/archived/dropped — the board's live rows."""
+        quiet = (
+            WorkState.CLOSED_AUTO,
+            WorkState.CLOSED_HUMAN,
+            WorkState.DROPPED,
+            WorkState.VERIFIED_CLOSED,
+            WorkState.ARCHIVED,
+        )
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM fingerprints ORDER BY last_seen DESC"
+            ).fetchall()
+        return [
+            self._row_to_fingerprint(row)
+            for row in rows
+            if WorkState(row["state"]) not in quiet
+            and (service is None or row["service"] == service)
+        ]
+
+    def _row_to_fingerprint(self, row: sqlite3.Row) -> Fingerprint:
+        return Fingerprint(
+            fp_hash=row["fp_hash"],
+            service=row["service"],
+            environment=row["environment"],
+            template=row["template"],
+            frames=tuple(TraceFrame(**f) for f in json.loads(row["frames_json"])),
+            severity=Severity(row["severity"]),
+            first_seen=_from_iso(row["first_seen"]),
+            last_seen=_from_iso(row["last_seen"]),
+            occurrences=row["occurrences"],
+            state=WorkState(row["state"]),
+            ticket_issue_id=row["ticket_issue_id"],
+            ticket_url=row["ticket_url"],
+        )
 
     # --- events & audit ------------------------------------------------------
 
