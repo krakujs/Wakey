@@ -25,7 +25,7 @@
 | E2-T2 | Config system: env + `wakey.yml` loader, JSON schema, validation errors with file/line, defaults documented | ONB-5, ONB-6 | WF-01 §6 | Invalid config → startup fails listing every problem; schema published for editors; unknown keys rejected | E1-T1 | M **done** (Settings.from_env + load_wakey_yaml, collected problems, redact regex validation; JSON schema file → E12-T17; 9 tests) |
 | E2-T3 | Storage interface + SQLite implementation + forward-only migrations | OPS-5 | WF-11 §5 | All state ops through interface; migration from schema v1→v2 tested; SQLite WAL mode; single-writer safety | E2-T1 | M **done** (Storage ABC + SQLiteStorage, WAL+lock, migrations v1; delivery dedup, occurrence accumulation; 7 tests) |
 | E2-T4 | HTTP server skeleton: FastAPI app, `/healthz`, `/readyz`, `/metrics` scaffolding, structured JSON logging with request IDs | OPS-3, OPS-4 | WF-11 | Request ID propagates into all log lines of a request; /readyz reports dependency status | E2-T2 | M **done** (create_app + request-id middleware + lean metrics registry + JSON logging + serve subcommand; 4 tests) |
-| E2-T5 | Internal queue + worker pool: bounded queues, backpressure, graceful shutdown drains in-flight work | NFR-3, ING-11 | WF-02 §7 | Load test: 1k events/s burst → zero loss, ordered per fingerprint, clean shutdown drains | E2-T4 | L | todo |
+| E2-T5 | Internal queue + worker pool: bounded queues, backpressure, graceful shutdown drains in-flight work | NFR-3, ING-11 | WF-02 §7 | Load test: 1k events/s burst → zero loss, ordered per fingerprint, clean shutdown drains | E2-T4 | L **done** (KeyPartitionQueue: crc32 partitions, per-key FIFO, QueueFull backpressure, join-based drain; 4 tests) |
 | E2-T6 | **Resource budget harness**: nightly benchmark profiles (idle / lean / 5M-events steady-state) measuring RSS, CPU-seconds, disk growth, boot time — CI fails on >20% regression | NFR-6 | eng-standards §8 | Budgets asserted green at baseline; artificial +20% memory regression fails CI; report artifact published per run | E2-T5 | M | todo |
 
 ### E3 — Onboarding & GitHub integration
@@ -45,8 +45,8 @@
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E4-T1 | Ingest API: `POST /ingest/<key>`, key auth, per-key rate limits, payload size caps | ING-1, ING-11 | WF-02 §2 | Wrong key 401; oversized 413; rate-limited 429+Retry-After; all metrics counted | E2-T5 | M | todo |
-| E4-T2 | Normalizer framework + generic JSON/JSON-lines/logfmt parsing | DET-1, ING-3 | WF-02 §4 | Contract tests per format; unknown format → routed to dead-letter with reason, never dropped silently | E2-T1 | M | todo |
+| E4-T1 | Ingest API: `POST /ingest/<key>`, key auth, per-key rate limits, payload size caps | ING-1, ING-11 | WF-02 §2 | Wrong key 401; oversized 413; rate-limited 429+Retry-After; all metrics counted | E2-T5 | M **done (core)** (key auth, delivery dedup, parse->redact->pipeline; HMAC auth + 429/queue wrap + rate limits remain) |
+| E4-T2 | Normalizer framework + generic JSON/JSON-lines/logfmt parsing | DET-1, ING-3 | WF-02 §4 | Contract tests per format; unknown format → routed to dead-letter with reason, never dropped silently | E2-T1 | M **done** (JSON/logfmt/plain auto-detect, severity mapping, delivery-scoped ids, dead letters; 6 tests) |
 | E4-T3 | Redaction hook in ingest path (uses SEC-1 engine) | SEC-1 | WF-09 §3 | No raw secret survives to storage: security corpus e2e asserts zero matches post-ingest | E4-T2 | S | todo |
 | E4-T4 | GCP Cloud Logging adapter: Pub/Sub push docs+recipe, OIDC token verification | ING-2 | WF-02 §3 | Contract test: valid OIDC accepted, expired/wrong-audience rejected; recipe deploys on fresh GCP project (manual AC at gate) | E4-T1 | M | todo |
 | E4-T5 | Docker/journald sidecar `wakey-agent`: tail, batch, reconnect, HMAC | ING-4 | WF-02 §3.3 | Container restart → resumes without duplicates (idempotency keys); survives 5min broker outage | E4-T1 | M | todo |
@@ -60,18 +60,18 @@
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E5-T1 | Traceback parsers: Python, Java, JS/TS, PHP (+ mixed-format logs) | DET-2 | WF-03 §3 | Corpus per language incl. old formats (Java 8, PHP 5, Django 1.x): ≥95% frame extraction on corpus; property test: parse→template stable under id/number churn | E4-T2 | L | todo |
-| E5-T2 | Fingerprint engine: message templating (ids/numbers/uuids/ips→slots) + top-frame hashing; fp hash + storage | DET-3 | WF-03 §4 | Same error w/ different ids → same fp (property test, 10k mutations); different errors → different fp ≥99% on corpus | E5-T1 | L | todo |
+| E5-T1 | Traceback parsers: Python, Java, JS/TS, PHP (+ mixed-format logs) | DET-2 | WF-03 §3 | Corpus per language incl. old formats (Java 8, PHP 5, Django 1.x): ≥95% frame extraction on corpus; property test: parse→template stable under id/number churn | E4-T2 | L **in-progress** (Python traceback parser done; Java/JS/PHP parsers remain) |
+| E5-T2 | Fingerprint engine: message templating (ids/numbers/uuids/ips→slots) + top-frame hashing; fp hash + storage | DET-3 | WF-03 §4 | Same error w/ different ids → same fp (property test, 10k mutations); different errors → different fp ≥99% on corpus | E5-T1 | L **done** (templating + sha256 identity, env-scoped; 6 stability/scoping tests) |
 | E5-T3 | Burst collapsing + occurrence counters | DET-4 | WF-03 §5 | 500 identical in 60s → 1 fingerprint, count=500; counter survives restart (DB-backed) | E5-T2 | M | todo |
 | E5-T4 | Severity classifier: panic/OOM/unhandled/5xx-spike/dependency-down | DET-5 | WF-03 §6 | Labeled corpus ≥90% agreement; spikes detected over sliding window | E5-T2 | M | todo |
-| E5-T5 | Policy gate: severity×rate thresholds, suppression list w/ expiry, maintenance windows (no-op stub ok in P1), autonomy levels, caps wiring | DET-6, DET-7, SEC-7 | WF-03 §7 | Unit tests per rule incl. boundary cases; suppressed fp w/ expired entry wakes again; observe mode → no agent calls (assert via fake LLM counter) | E5-T3, E5-T4 | M | todo |
+| E5-T5 | Policy gate: severity×rate thresholds, suppression list w/ expiry, maintenance windows (no-op stub ok in P1), autonomy levels, caps wiring | DET-6, DET-7, SEC-7 | WF-03 §7 | Unit tests per rule incl. boundary cases; suppressed fp w/ expired entry wakes again; observe mode → no agent calls (assert via fake LLM counter) | E5-T3, E5-T4 | M **done (core)** (count thresholds, busy-absorb, suppression, observe; rate windows -> E5-T3) |
 | E5-T6 | Deploy correlation: first-bad/last-good from deploy events + fingerprint timeline | DET-9 | WF-03 §8 | Synthetic timeline: fp first-seen between deploys A,B → ticket names B, lists A as last-good | E4-T6, E5-T3 | M | todo |
 
 ### E6 — Ticketing
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E6-T1 | Ticket creation: template renderer (counts, timeline, redacted excerpt, deploy correlation, dashboard link), labels taxonomy | TIK-1, TIK-2 | WF-04 §2 | Golden-file test of rendered issue; label set asserted; ≥1 ticket/hour/service cap enforced | E3-T2, E5-T5, E5-T6 | M | todo |
+| E6-T1 | Ticket creation: template renderer (counts, timeline, redacted excerpt, deploy correlation, dashboard link), labels taxonomy | TIK-1, TIK-2 | WF-04 §2 | Golden-file test of rendered issue; label set asserted; ≥1 ticket/hour/service cap enforced | E3-T2, E5-T5, E5-T6 | M **done (core)** (template renderer + ConsoleForge sink verified in demo; labels/caps wiring with E3) |
 | E6-T2 | Live occurrence updates (throttled comments) | TIK-3 | WF-04 §3 | Burst → exactly 1 update/hour despite 10k events; content includes ×count | E6-T1 | S | todo |
 | E6-T3 | Auto-close on silence | TIK-4 | WF-04 §4 | Fingerprint silent past grace window → close comment with evidence; clock logic unit-tested (fake clock) | E6-T1 | S | todo |
 | E6-T4 | Regression reopen w/ reintroducing-commit range | TIK-5 | WF-04 §5 | fp returns after close → reopen (never new issue) + commit range; second reopen suppressed w/o human ack (VER-4 interplay) | E6-T3 | M | todo |
@@ -123,7 +123,7 @@
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E10-T1 | Redaction engine: builtin patterns (AWS/GCP keys, JWTs, cards w/ Luhn, emails, private-key blocks, URLs w/ creds) + custom regexes + second pre-LLM pass | SEC-1 | WF-09 §3 | Fuzz corpus zero-leak test; Luhn validation; custom pattern smoke test; perf: <5ms/KB p95 | E4-T3 | M | todo |
+| E10-T1 | Redaction engine: builtin patterns (AWS/GCP keys, JWTs, cards w/ Luhn, emails, private-key blocks, URLs w/ creds) + custom regexes + second pre-LLM pass | SEC-1 | WF-09 §3 | Fuzz corpus zero-leak test; Luhn validation; custom pattern smoke test; perf: <5ms/KB p95 | E4-T3 | M **done (core)** (14 families, Luhn guard, fail-closed; 13 corpus tests; fuzz+perf expansion pending) |
 | E10-T2 | Injection defense suite: data-quoting conventions, per-stage tool allowlists, log-content canaries in prompts, adversarial corpus | SEC-2 | WF-09 §4 | Adversarial corpus: 0 tool misuse; canary tokens never appear in tool calls | E7-T1 | M | todo |
 | E10-T3 | Credential store: encrypted-at-rest envelope, env-ref support, rotation docs | SEC-4 | WF-09 §5 | Dump of DB yields no plaintext secrets (test); rotation runbook exercised | E3-T1 | M | todo |
 | E10-T4 | Audit log hardening: append-only, hash-chained lines, export API stub | SEC-5 | WF-09 §6 | Tamper test: modified line detected via hash chain | E7-T1 | S | todo |
