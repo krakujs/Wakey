@@ -95,12 +95,14 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 8. ✅ E6-T1 ticket creation via ForgePort — done (core; labels/caps with E3)
 9. ✅ Two-service demo 7/7 — M0 rehearsal complete
 10. ✅ E3 GitHub adapter core — done (ForgePort implementation + 6 fixture contract tests; registration wizard + live gate need founder credentials)
-11. ⏳ M1: RCA agent skeleton (fake model first; live needs LLM key in .env or local Ollama)
+11. ✅ M1 RCA skeleton started — heuristic classifier (infra/config/code-fix/needs-human + confidence), RCA comment posting, audit; live model tier needs key/Ollama
 12. ⏳ M0 live gate: real GCP error -> real GitHub ticket (blocked on founder credentials)
 
 Rules: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated at wrap-up or gate.
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-16 (cont. 5) — RCA agent skeleton: heuristic classifier (infra/config/code-fix/needs-human with confidence), forge comment posting, audit. Tests caught a case-sensitivity bug in the markers. 93 tests green. Development ≈ 22% of backlog tasks; M0 rehearsal done, M1 skeleton done, M2 fix agent + M3 hardening remaining.
 
 - 2026-09-16 (cont. 4) — GitHub adapter built: ForgePort implementation (Bearer auth, typed auth/rate-limit errors, bounded 5xx retries) + 6 MockTransport contract tests; tests caught a transport/client misuse and two import slips, all fixed. 88 tests green. Note: two local history collapses this session (content preserved; messages under-describe tail commits) — no more amends; commits verified against HEAD before creation.
 - 2026-09-16 (cont. 3) — E5-T1 completed (java/js/php parsers + dispatcher; tests caught typeshed Match-iterability and a precedence bug) and HMAC webhook auth (migration v2, constant-time compare, body-binding tests). 82 tests, make check green. Queue: items 1-9 done; next = E3 GitHub adapter + M1 RCA skeleton. Founder input needed for: GitHub App credentials (M0 live), LLM key/.env or Ollama endpoint (M1 live).
