@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 20) — FixFlow composed (agents/fix_flow.py): eligibility gate + ReproFirstFixer + delivery in one auditable entry; 127 tests green. M2 loop now end-to-end: gate -> repro-first fix -> draft proposal delivery. Development ≈ 60% of backlog tasks, ≈ 75% of P1 effort. Remaining: fix-proposal content via live model (E8-T5 full), verification scheduling integration into serve, GUI wizard/settings pages, M3 hardening (fuzz/perf/security review), M0 GCP leg.
+
 - 2026-09-16 (cont. 19) — Verification scheduler (E9-T1 scheduling) done: bounded rounds, injectable clock/sleep, crash-tolerant passes; tests caught an order assumption (verified fingerprint leaves the watched set). 125 tests green. Process note: one more amend slip (scheduler code folded into a docs commit) — the SKILL ban now includes using plain commits only, checked against HEAD first. Development ≈ 58% of backlog.
 
 - 2026-09-16 (cont. 18) — Skill registry (founder directive: models connect to skills/plugins, complete user authority, simple loading): SkillManifest validation, SkillRegistry with disabled-by-default + explicit enable + profile binding (hard errors on unknown/disabled). src/wakey/skills/. 5 tests; 108 green. Development ≈ 57% of backlog tasks. Remaining: entrypoint execution via plugin runtime (E16), delivery wiring, GUI, M3 hardening.
