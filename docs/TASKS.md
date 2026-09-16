@@ -45,7 +45,7 @@
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E4-T1 | Ingest API: `POST /ingest/<key>`, key auth, per-key rate limits, payload size caps | ING-1, ING-11 | WF-02 §2 | Wrong key 401; oversized 413; rate-limited 429+Retry-After; all metrics counted | E2-T5 | M **done (core)** (key auth, delivery dedup, parse->redact->pipeline; HMAC auth + 429/queue wrap + rate limits remain) |
+| E4-T1 | Ingest API: `POST /ingest/<key>`, key auth, per-key rate limits, payload size caps | ING-1, ING-11 | WF-02 §2 | Wrong key 401; oversized 413; rate-limited 429+Retry-After; all metrics counted | E2-T5 **done (core)** (HMAC signature verification + migration v2 landed; 429/queue wrap + rate limits remain) |
 | E4-T2 | Normalizer framework + generic JSON/JSON-lines/logfmt parsing | DET-1, ING-3 | WF-02 §4 | Contract tests per format; unknown format → routed to dead-letter with reason, never dropped silently | E2-T1 | M **done** (JSON/logfmt/plain auto-detect, severity mapping, delivery-scoped ids, dead letters; 6 tests) |
 | E4-T3 | Redaction hook in ingest path (uses SEC-1 engine) | SEC-1 | WF-09 §3 | No raw secret survives to storage: security corpus e2e asserts zero matches post-ingest | E4-T2 | S | todo |
 | E4-T4 | GCP Cloud Logging adapter: Pub/Sub push docs+recipe, OIDC token verification | ING-2 | WF-02 §3 | Contract test: valid OIDC accepted, expired/wrong-audience rejected; recipe deploys on fresh GCP project (manual AC at gate) | E4-T1 | M | todo |
@@ -60,7 +60,7 @@
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
-| E5-T1 | Traceback parsers: Python, Java, JS/TS, PHP (+ mixed-format logs) | DET-2 | WF-03 §3 | Corpus per language incl. old formats (Java 8, PHP 5, Django 1.x): ≥95% frame extraction on corpus; property test: parse→template stable under id/number churn | E4-T2 | L **in-progress** (Python traceback parser done; Java/JS/PHP parsers remain) |
+| E5-T1 | Traceback parsers: Python, Java, JS/TS, PHP (+ mixed-format logs) | DET-2 | WF-03 §3 | Corpus per language incl. old formats (Java 8, PHP 5, Django 1.x): ≥95% frame extraction on corpus; property test: parse→template stable under id/number churn | E4-T2 **done** (python/java/javascript/php; ruby/go/c# in P2) |
 | E5-T2 | Fingerprint engine: message templating (ids/numbers/uuids/ips→slots) + top-frame hashing; fp hash + storage | DET-3 | WF-03 §4 | Same error w/ different ids → same fp (property test, 10k mutations); different errors → different fp ≥99% on corpus | E5-T1 | L **done** (templating + sha256 identity, env-scoped; 6 stability/scoping tests) |
 | E5-T3 | Burst collapsing + occurrence counters | DET-4 | WF-03 §5 | 500 identical in 60s → 1 fingerprint, count=500; counter survives restart (DB-backed) | E5-T2 | M | todo |
 | E5-T4 | Severity classifier: panic/OOM/unhandled/5xx-spike/dependency-down | DET-5 | WF-03 §6 | Labeled corpus ≥90% agreement; spikes detected over sliding window | E5-T2 | M | todo |
