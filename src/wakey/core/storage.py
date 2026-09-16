@@ -27,7 +27,9 @@ from wakey.core.models import (
     WorkState,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+_MIGRATION_V2 = "ALTER TABLE services ADD COLUMN webhook_secret TEXT"
 
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -157,13 +159,15 @@ class SQLiteStorage(Storage):
             )
             row = self._conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
             current = int(row[0]) if row else 0
-            if current < 1:
-                self._conn.executescript(_SCHEMA_V1)
-                self._conn.execute(
-                    "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                    (str(SCHEMA_VERSION),),
-                )
+            migrations: dict[int, str] = {1: _SCHEMA_V1, 2: _MIGRATION_V2}
+            for version in sorted(migrations):
+                if version > current:
+                    self._conn.executescript(migrations[version])
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(SCHEMA_VERSION),),
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -194,10 +198,11 @@ class SQLiteStorage(Storage):
     def save_service(self, service: Service) -> None:
         with self._lock, self._conn:
             self._conn.execute(
-                "INSERT INTO services (name, repo, path, forge, environment, ingest_key_hash) "
-                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET "
+                "INSERT INTO services (name, repo, path, forge, environment, ingest_key_hash, "
+                "webhook_secret) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET "
                 "repo=excluded.repo, path=excluded.path, forge=excluded.forge, "
-                "environment=excluded.environment, ingest_key_hash=excluded.ingest_key_hash",
+                "environment=excluded.environment, ingest_key_hash=excluded.ingest_key_hash, "
+                "webhook_secret=excluded.webhook_secret",
                 (
                     service.name,
                     service.repo,
@@ -205,6 +210,7 @@ class SQLiteStorage(Storage):
                     service.forge,
                     service.environment,
                     service.ingest_key_hash,
+                    service.webhook_secret,
                 ),
             )
 
@@ -220,6 +226,7 @@ class SQLiteStorage(Storage):
             forge=row["forge"],
             environment=row["environment"],
             ingest_key_hash=row["ingest_key_hash"],
+            webhook_secret=row["webhook_secret"],
         )
 
     def get_service_by_ingest_key_hash(self, key_hash: str) -> Service | None:
@@ -236,6 +243,7 @@ class SQLiteStorage(Storage):
             forge=row["forge"],
             environment=row["environment"],
             ingest_key_hash=row["ingest_key_hash"],
+            webhook_secret=row["webhook_secret"],
         )
 
     # --- fingerprints --------------------------------------------------------

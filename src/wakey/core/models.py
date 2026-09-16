@@ -136,6 +136,7 @@ class Service(BaseModel):
     forge: str = "github"
     environment: str = "prod"
     ingest_key_hash: str = Field(min_length=8)
+    webhook_secret: str | None = None
 
 
 class AuditEvent(BaseModel):

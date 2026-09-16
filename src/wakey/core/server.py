@@ -9,6 +9,7 @@ real SQLite storage and uvicorn.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 from typing import Any
 
@@ -80,20 +81,46 @@ def create_app(
     def prometheus_metrics() -> Response:
         return Response(content=metrics.render(), media_type="text/plain; version=0.0.4")
 
+    if pipeline is not None:
+        register_ingest(app, storage, pipeline, engine, metrics)
+
+    return app
+
+
+def register_ingest(
+    app: FastAPI,
+    storage: Storage,
+    pipeline: IngestPipeline,
+    engine: RedactionEngine,
+    metrics: MetricsRegistry,
+) -> None:
+    """Wire POST /ingest/{service_key}: auth -> parse -> redact -> pipeline."""
+
     @app.post("/ingest/{service_key}")
     async def ingest(service_key: str, request: Request) -> Response:
-        """Single-service ingest (WF-02 §2): auth, parse, redact, pipeline."""
-        assert pipeline is not None  # route only exists when forge is wired
         key_hash = hashlib.sha256(service_key.encode()).hexdigest()[:16]
         service = storage.get_service_by_ingest_key_hash(key_hash)
         if service is None:
             metrics.inc("wakey_ingest_rejected_total", "ingest rejections", {"reason": "auth"})
             return JSONResponse({"error": "unknown service key"}, status_code=401)
 
-        body = (await request.body()).decode("utf-8", errors="replace")
+        body_bytes = await request.body()
+        if service.webhook_secret:
+            signature = request.headers.get("X-Wakey-Signature", "")
+            expected = hmac.new(
+                service.webhook_secret.encode(), body_bytes, hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(f"sha256={expected}", signature):
+                metrics.inc(
+                    "wakey_ingest_rejected_total", "ingest rejections", {"reason": "signature"}
+                )
+                return JSONResponse({"error": "invalid signature"}, status_code=401)
+
         delivery_id = request.headers.get("X-Delivery-Id") or new_request_id()
         if not storage.record_delivery(delivery_id):
             return JSONResponse({"deduplicated": True})  # replayed delivery (WF-02 §7)
+
+        body = body_bytes.decode("utf-8", errors="replace")
         parsed = parse_events(
             body,
             EventContext(
@@ -117,7 +144,6 @@ def create_app(
             metrics.inc(
                 "wakey_dead_letters_total", "dead-lettered lines", {"reason": reason.split(":")[0]}
             )
-
         metrics.inc("wakey_ingest_accepted_total", "events accepted")
         return JSONResponse(
             {
@@ -126,5 +152,3 @@ def create_app(
                 "outcomes": outcomes,
             }
         )
-
-    return app
