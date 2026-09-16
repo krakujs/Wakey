@@ -44,3 +44,6 @@ demo-two-services: ## run the two-dummy-service pipeline demo (7 scenarios)
 
 demo-m0: ## M0 gate rehearsal with simulated GitHub (no live calls)
 	.venv/bin/python demo/m0_gate_rehearsal.py
+
+bench: ## resource benchmark vs NFR-6 budgets (host-safe, synthetic)
+	.venv/bin/python scripts/bench_resources.py
