@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 13) — Verification watcher pass (E9-T1): run_once evaluates verifying fingerprints via injected grace inputs, applies close/reopen with audit. 105 tests green. Development ≈ 40% of backlog tasks. Remaining buildable: fix-proposal delivery wiring, GUI pages, M3 hardening (fuzz/perf/review). Live gates: GCP log source + LLM key still with founder.
+
 - 2026-09-16 (cont. 12) — `wakey doctor` command live (E3-T7 core): synthetic error through the real pipeline; ConsoleForge gained open_draft_proposal (protocol now fully implemented by both adapters). 103 tests green. Development ≈ 38% of backlog. Next buildable: fix-proposal delivery wiring (fix diff -> draft PR via adapter), verification watcher scheduling, GUI pages; live gates still await founder GitHub token use in .env (already stored) + LLM endpoint.
 
 - 2026-09-16 (cont. 11) — E8-T5 core done: ForgePort.open_draft_proposal + GitHub draft-PR adapter + simulator /pulls endpoint + contract test. 103 tests green. History note: this content landed folded into a docs commit (5fe5f79) — content verified, message under-describes it; amend usage is now banned in session protocol.
