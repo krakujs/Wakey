@@ -22,3 +22,6 @@ node_modules/
 # Tooling / unrelated
 .video_agent/
 .DS_Store
+wakey-data/
+wakey-data/*.db-wal
+wakey-data/*.db-shm
