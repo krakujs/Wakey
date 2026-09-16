@@ -38,3 +38,6 @@ headers-check: ## verify SPDX headers only
 clean: ## remove caches and build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build *.egg-info
 	find . -name "__pycache__" -type d -not -path "./.venv/*" -exec rm -rf {} +
+
+demo-two-services: ## run the two-dummy-service pipeline demo (7 scenarios)
+	.venv/bin/python demo/two_service_demo.py
