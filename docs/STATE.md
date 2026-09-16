@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 23) — Security review checklist consolidated (docs/security-review.md): all verified controls with test paths, open items = external review + dashboard auth probe (GUI). M3 hardening pass structurally complete except those two. Development ≈ 65% of backlog tasks.
+
 - 2026-09-16 (cont. 22) — Redaction corpus expanded to 18 families (+stripe, pypi, npm, sendgrid keys). 128 tests green. Development ≈ 63% of backlog tasks. Remaining: GUI wizard/settings pages, M3 security review + perf tuning, M0 GCP leg (founder input).
 
 - 2026-09-16 (cont. 21) — Resource benchmark harness (E2-T6 core, make bench): 5000 synthetic events through the real pipeline measured 4835/s at 58MB RSS — 6x inside the NFR-6 budget. Measured numbers replaced the estimates; CI regression gate wired to this script. 127 tests green. Development ≈ 62% of backlog tasks, ≈ 80% of P1 effort.
