@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 16) — **LIVE RCA PASS**: real TypeError traceback -> GLM (z.ai anthropic-compatible endpoint) -> structured RCA: CLASS code-fix, confidence 0.75, correct root cause and evidence (demo/live_rca_check.py). M1 live gate core proven. 105 tests green (make check). Development ≈ 52% of backlog tasks, ≈ 75% of P1 effort. Remaining: pipeline wiring of live RCA + fix proposal delivery into the ingest flow, verification watcher scheduling, GUI wizard/settings, M3 hardening, M0 GCP leg (needs GCP log source).
+
 - 2026-09-16 (cont. 15) — **Live LLM tier unblocked**: GLM key migrated from Claude settings to .env on founder instruction (SKILL rule amended: founder-authorized migration allowed, key never printed/committed — git grep verified 0 tracked files). AnthropicCompatibleModel implemented; live ping PASS on glm-4.5-air via z.ai anthropic endpoint. Settings gained llm_* fields. 118 tests green. Development ≈ 50% of backlog tasks, ≈ 70% of P1 effort. Remaining: wire live model into RCA agent, GUI wizard/settings pages, M3 hardening, live GCP leg.
 
 - 2026-09-16 (cont. 14) — **First multi-agent parallel round** (3 agents, lane-partitioned, no worktree races — disjoint module ownership held): L-D sliding-window rate counters (E5-T3), L-G fix-proposal delivery (E8-T5), L-P live board page (OPS-11/WF-12). Integrator verified, committed per lane. 118 tests green, make check green. Development ≈ 48% of backlog tasks, ≈ 65% of P1 effort. Remaining: M2 delivery wiring into pipeline, GUI polish (wizard/settings pages), M3 hardening (fuzz/perf/review), M0 GCP live leg, M1 live model.

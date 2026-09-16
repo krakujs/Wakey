@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 import uvicorn
 
 from wakey import __version__
+from wakey.agents.llm import AnthropicCompatibleModel
 from wakey.core.config import Settings
 from wakey.core.logging import setup_logging
 from wakey.core.models import LogEvent, Severity
@@ -87,7 +88,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         result = pipeline.handle_event(event)
         print(f"doctor: pipeline outcome={result.outcome.value} ({result.detail})")
-        return 0 if result.outcome.value in {"ticketed", "recorded", "absorbed"} else 1
+
+        llm_ok = True
+        if settings.llm_base_url and settings.llm_api_key:
+            model = AnthropicCompatibleModel(
+                settings.llm_base_url, settings.llm_api_key, settings.llm_model, max_tokens=512
+            )
+            reply = model.complete(
+                "You are an SRE. Reply with CLASS:"
+                " <code-fix|config|infra|needs-human> then one sentence.",
+                f"Classify this production error:\n{event.message}",
+            )
+            llm_ok = not reply.data.get("error") and bool(reply.text.strip())
+            preview = reply.text.strip()[:200]
+            print(f"doctor: live model -> {preview}")
+
+        return 0 if (result.outcome.value in {"ticketed", "recorded", "absorbed"} and llm_ok) else 1
     if args.command != "serve":
         print(f"wakey {__version__} — use 'wakey serve' to start the server")
         return 0
