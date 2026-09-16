@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 24) — /api/settings endpoint (masked, secrets-free) for the GUI settings page; 131 tests green.
+
 - 2026-09-16 (cont. 23) — Security review checklist consolidated (docs/security-review.md): all verified controls with test paths, open items = external review + dashboard auth probe (GUI). M3 hardening pass structurally complete except those two. Development ≈ 65% of backlog tasks.
 
 - 2026-09-16 (cont. 22) — Redaction corpus expanded to 18 families (+stripe, pypi, npm, sendgrid keys). 128 tests green. Development ≈ 63% of backlog tasks. Remaining: GUI wizard/settings pages, M3 security review + perf tuning, M0 GCP leg (founder input).
