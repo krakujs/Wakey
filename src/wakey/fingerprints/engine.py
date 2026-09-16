@@ -16,6 +16,7 @@ import hashlib
 import re
 
 from wakey.core.models import Fingerprint, LogEvent, Severity, TraceFrame, utcnow
+from wakey.fingerprints.parsers import parse_traceback
 
 TOP_FRAMES = 3
 
@@ -37,8 +38,6 @@ _TEMPLATING: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("num", re.compile(r"\b\d+\b")),
 )
 
-_PY_FILE = re.compile(r'File "([^"]+)", line (\d+), in (\S+)')
-
 
 def normalize_template(message: str) -> str:
     """Replace volatile tokens with named slots, leaving the shape intact."""
@@ -46,27 +45,6 @@ def normalize_template(message: str) -> str:
     for slot, pattern in _TEMPLATING:
         result = pattern.sub(f"{{{slot}}}", result)
     return result
-
-
-def parse_python_traceback(text: str) -> tuple[str, tuple[TraceFrame, ...]] | None:
-    """Extract (error message, frames) from a Python traceback, else None.
-
-    Handles the standard single-chain form; chained exceptions contribute all
-    their frames (the root error line is the last non-``File`` line).
-    """
-    if "Traceback (most recent call last):" not in text:
-        return None
-    frames: list[TraceFrame] = []
-    for path, line, function in _PY_FILE.findall(text):
-        frames.append(TraceFrame(path=path, line=int(line), function=function))
-    error_lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.strip().startswith(("File ", "Traceback", "During handling"))
-    ]
-    if not frames or not error_lines:
-        return None
-    return error_lines[-1], tuple(frames)
 
 
 def fingerprint_hash(
@@ -87,7 +65,7 @@ def fingerprint_from_event(event: LogEvent) -> Fingerprint:
     message = event.message
     frames = event.frames
     if not frames:
-        parsed = parse_python_traceback(message)
+        parsed = parse_traceback(message)
         if parsed is not None:
             message, frames = parsed
     template = normalize_template(message)

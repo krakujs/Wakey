@@ -6,11 +6,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from wakey.core.models import LogEvent, Severity
-from wakey.fingerprints.engine import (
-    fingerprint_from_event,
-    normalize_template,
-    parse_python_traceback,
-)
+from wakey.fingerprints.engine import fingerprint_from_event, normalize_template
+from wakey.fingerprints.parsers import parse_python
 
 
 def make_event(message: str, service: str = "payments-api", environment: str = "prod") -> LogEvent:
@@ -68,7 +65,7 @@ def test_python_traceback_parsed_into_frames() -> None:
         '    return gateway.refund(order.metadata["key"])\n'
         "TypeError: 'NoneType' object is not subscriptable\n"
     )
-    parsed = parse_python_traceback(traceback_text)
+    parsed = parse_python(traceback_text)
     assert parsed is not None
     message, frames = parsed
     assert message == "TypeError: 'NoneType' object is not subscriptable"
@@ -81,4 +78,4 @@ def test_python_traceback_parsed_into_frames() -> None:
 
 
 def test_plain_message_is_not_a_traceback() -> None:
-    assert parse_python_traceback("Connection refused to db:5432") is None
+    assert parse_python("Connection refused to db:5432") is None
