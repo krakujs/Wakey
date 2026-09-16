@@ -70,6 +70,9 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 | 2026-09-15 | **Edge-case sweep + work-state machine + live board**: docs/edge-cases.md register (EC-01..27); new P1 features DET-14 (work-state machine, in-flight suppression — never re-trigger an error already being worked on) and OPS-11 (live incident board: every error → work item → live status, dashboard + `wakey board`); P2: DET-15 related-fingerprint families, DET-16 cardinality explosion guard, VER-6 external-fix credit, board live updates. Tasks E6-T5, E11-T9 (P1), E12-T27..30 (P2); backlog now 140 | Founder: no duplicate triggers for already-worked errors; task board with live statuses for everyone | Relying on implicit dispatch caps (was ambiguous); separate "board" product (board = aggregation of existing state, not a new source of truth) |
 | 2026-09-15 | Founder requested a local two-dummy-service test run; **not executed** — planning-only lock stands and no code exists. Delivered docs/two-service-local-test.md instead (becomes `make demo-two-services` + E1-T5 fixtures at dev start). Keys stance made policy (SKILL.md §8): no credential extraction from other tools' stores; demo needs no LLM keys (fake tier) | Respect standing planning-only lock; request ambiguous as an unlock; pipeline test factually needs no LLM | Treating the request as development unlock (not explicit enough); scraping Claude Code key storage (security violation) |
 | 2026-09-15 | Never build: auto-merge, chat UI, heavy agent frameworks | Focus; auditability (docs/04 "Not doing") | — |
+| 2026-09-16 | **Observe-mode contract resolved** (WF-03 §7 ↔ WF-07 §6): observe emits the wake signal (ticket created for humans) but never dispatches agents; agent/LLM counters stay zero | WF-07's definition is the operational one and matches WF-03's own acceptance criterion; a purely-internal record would be invisible to users | Suppressed-all reading of WF-03 §7 (contradicted WF-07 + WF-03 §54) |
+| 2026-09-16 | **Durable ingest contract**: POST /ingest persists a pending delivery and answers 202 before any processing; a bounded worker pool owns parsing/dispatch; per-event dispatch journal gives at-least-once dispatch with state-machine absorption of replays | R-02: forge outages and crashes must neither lose events nor hang senders; exactly-once external effects are impossible without reconciliation — absorption is the honest equivalent | Sync pipeline on the request path (status quo ante); pure in-memory queue (crash loss) |
+| 2026-09-16 | **Dashboard gains a fingerprint detail page + a human-initiated fix trigger** (WF-12 page 3b amended): detail = template, summary, stored redacted events, RCA verdict + summary, full audit trail; "request fix attempt" runs the shared FIX-1 gate and audits `fix.requested` with a named outcome. Read-mostly boundary amended accordingly: this is the dashboard's one incident action, human-clicked, never merging | Founder, testing Wakey live over the Bharat-farm backend, asked for per-log depth and fix-from-UI; gate + audit keep the trust model intact | Keeping the dashboard purely read-only (founder overrode); a UI button that dispatches fixes without the gate (violates FIX-1/DET-14) |
 
 ## Open decisions (blocking work — resolve before the listed epic)
 
@@ -83,7 +86,74 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 
 ## Blockers / risks currently open
 
-- None. (Add rows as `R-<n>` with mitigation owner.)
+- Development review findings **R-01–R-14**: remediation implemented (see session log and the register below). Remaining items are founder-blocked or P2: real GCP error source (M0 leg), creating the GitHub App on github.com (the exchange/storage code is done — one click + credentials needed), deploy-source CI wiring (recipe in docs/recipes/deploy-events.md), live G-gate suite run (env-gated, ready in tests/live/), external security review (E10-T6; self-review threat model at docs/threat-model.md). All locally-runnable gates are green.
+- Fix-execution sandbox (E10-T2): the capped-container gate is now executable and green (`make gate-sandbox`, 8/8). Live autonomous fixing remains disabled by default (autonomy dial); enabling it is a founder decision after reviewing gate evidence.
+
+### Finding register (2026-09-16 remediation)
+
+```text
+Finding: R-01  Tasks: E2-T4/T5, E3-T5, E4-T1, E11-T7  Status: verified
+Evidence: wakey/core/composition.py single path; serve registers ingest+workers;
+  tests/e2e/test_startup_ingest.py boots the packaged app and ingests over real HTTP.
+Finding: R-02  Tasks: E4-T7/T9, E2-T5, E6-T5  Status: verified
+Evidence: durable deliveries table (per-service namespaced), 202-before-processing,
+  dispatch journal, restart recovery; tests/unit/test_ingest_api.py (outage, replay,
+  restart, shared-delivery-id cases), tests/unit/test_worker.py (dead-letter cap).
+Finding: R-04  Tasks: E4-T3/T8, E10-T1/T2  Status: verified
+Evidence: pass-1 whole-payload redaction (multiline-capable) at the ingest boundary +
+  pass-2 sanitize_log_event on every field (ids, attribute keys/values);
+  test_ingest_api secrets-at-rest + PEM-block tests; prompts re-redacted (ModelRca).
+Finding: R-05  Tasks: E3-T6, E5-T3/T4/T5, E6-T2/T5, E10-T5  Status: verified
+Evidence: severity floor in gate (INFO never wakes), stored per-service config
+  (ServiceYaml in services.config_json), sliding-window burst rule, hourly ticket
+  cap, doubling-comment throttle, QUEUED_RCA reservation before forge call.
+Finding: R-03  Tasks: E7-T1, E8-T3/T4, E10-T2  Status: verified (gate executable)
+Evidence: safe_resolve (absolute/traversal/symlink escapes), snapshot skip-list +
+  size cap, minimal env, RLIMITs, process-group kill, unshare net-ns when available;
+  `make gate-sandbox` runs the negative suite inside a network-less 512MB/1-CPU/
+  64-pid container — 8/8 green (egress blocked, memory cap enforced, grandchild
+  cleanup, escape rejection). Live fixing remains disabled by product default.
+Finding: R-06  Tasks: E8-T5, E3-T2, E17-T1  Status: verified
+Evidence: delivery resolves default branch, creates wakey/fix-* (collision-suffixed),
+  commits the tested files (git data API; force=false), opens draft PR bound to base;
+  tests/e2e/test_m2_loop.py asserts committed tree == tested tree via simulator.
+Finding: R-07  Tasks: E3-T5, E11-T1  Status: verified (auth) — wizard pages remain
+Evidence: first-run setup token (single-use, 30-min, banner-printed, `wakey
+  setup-token --force`); admin sessions (HttpOnly SameSite=Lax cookie, server-side,
+  revocable); /board /settings /api/settings session-gated; health/metrics/ingest
+  intentionally public; tests/unit/test_auth.py + test_web_board negative tests.
+Finding: R-08  Tasks: E8-T2/T3/T4/T6/T7  Status: verified
+Evidence: immutable original baseline, diff vs original covers all attempts, repro
+  failure output feeds the proposer, repro-tamper rejection, supported-file snapshot;
+  tests/unit/test_fix.py two-attempt-diff and failure-output tests.
+Finding: R-09  Tasks: E6-T3/T4/T5, E9-T1..T4  Status: verified
+Evidence: watcher applies verdicts locally AND on the forge (close/reopen/labels),
+  chronic flag blocks repeat autonomous fixes, persisted verification anchors resume
+  after restart; merge webhook (`pull_request.closed`+merged → verifying) and
+  `POST /webhooks/deploy` (deploy-aware grace) live; tests/unit/test_webhooks.py
+  + M2 loop E2E. Remaining: real deploy-source recipe (E4-T6).
+Finding: R-10  Tasks: E10-T1..T6  Status: in-progress (major controls landed)
+Evidence: security-review.md rewritten + threat-model.md self-review (E10-T6 slice);
+  landed: audit hash chain + tamper test (E10-T4), SecretBox AES-GCM envelope +
+  fail-closed app-credential storage (E10-T3 slice), session/token hashing, GCP push
+  OIDC claims (E4-T4), sandbox container gate (E10-T2). Remaining: adversarial
+  prompt-injection corpus, LLM-spend accounting, external review.
+Finding: R-11  Tasks: E1-T2/T4/T6, E2-T6, E3-T8  Status: verified
+Evidence: README/status corrected; CI enforces --cov-fail-under=90; make check green;
+  console script installed; doctor/status report what they actually test.
+Finding: R-12  Tasks: E2-T2/T3, E3-T7, E11-T5/T7, E1 packaging  Status: verified
+Evidence: wakey console script (pyproject [project.scripts]); strict wakey.yml
+  (extra=forbid rejects typos like `autnomy`); unsupported DB backends rejected;
+  .env.example aligned to consumed WAKEY_* vars; compose forwards them; doctor states
+  its limitations.
+Finding: R-13  Tasks: E1-T1/T5, E10  Status: verified
+Evidence: wakey-data/ untracked (git rm --cached, no history rewrite), gitignored
+  with WAL/SHM; local DB preserved.
+Finding: R-14  Tasks: E1-T6, E2-T6, E4-T10, E11 ops  Status: verified
+Evidence: bench uses semantically distinct families, verifies HTTP 202 + stored rows +
+  fingerprint count + queue drain; 50 families/5000 events at 3289/s, 59MB RSS;
+  retention (prune_events/prune_deliveries) runs at boot + hourly (WAKEY_RETENTION_DAYS).
+```
 
 ## Execution queue (continuous mode — phase discipline per founder 2026-09-16)
 
@@ -106,6 +176,24 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 Execution mode (founder, 2026-09-16): **continuous** — work through the backlog back-to-back without round gating. Rules unchanged: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated continuously.
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-16 (live demo session) — **Wakey run live over a real service** (Bharat-farm Django backend on a local test DB, errors shipped from its real error log): full loop verified — ingest → redaction → fingerprint dedup → threshold wake → ticket → **live GLM RCA (infra, 0.85; honest needs-human on mangled events)**. Founder saw the GUI and asked for per-log detail + fix-from-UI: built the fingerprint detail page (stored events, RCA + summary in audit, audit trail; storage gained list_audit/recent_events) and the manual fix trigger (FIX-1 gate + named outcome + `fix.requested` audit; executor honestly blocked pending E7-T1/E8-T4/E8-T5). Board rows now link to detail; RCA audit lines carry the summary. 9 new tests; 220 unit+security green.
+
+- 2026-09-16 (M2 live verification session) — **The complete autonomous fix loop ran live in production.** On the deployed Cloud Run instance: seeded error ingested via public URL → ticket #9 on krakujs/linux-clipboard-manager → live GLM RCA (code-fix 0.80) → authorized `@wakey fix` via signed webhook → FixExecutor: FIX-1 gate passed, workspace tarball fetched, model repro written and confirmed failing, model patch applied, pytest green → draft PR #10 with the tested fix + repro test published on the real default branch (resolved at runtime) → review-link comment posted. Also fixed during verification: `httpx` tarball fetch now follows GitHub's 302; bare `python` in test commands resolves to the runtime interpreter; runtime image ships pytest for fixer runs; `WAKEY_ALLOWED_REPOS` covers every fix-target repo. Local gates: 300 tests + 8 sandbox-gated, coverage 90.19%, demos + bench green. Remaining for v1.0: GCP Pub/Sub live subscription (recipe ready), PR feedback loop (E8-T8), Postgres/OPS-5 for durable Cloud Run storage, external security review, SA key rotation.
+
+- 2026-09-16 (M2 completion session) — **The full production fix loop is live.** FixExecutor: FIX-1 gate → per-repo tarball workspace fetch (redirect-following, traversal/symlink/caps enforced) → bounded pip bootstrap → ReproFirstFixer with the live ModelProposer (strict JSON contract, redacted prompts, injection corpus) → branch + draft PR pinned by digest → audited. Wired into `@wakey fix` (deny-by-default auth, WAKEY_AUTHORIZED_USERS) and the config API (PATCH /api/services/{name}/config with strict validation). Verified LIVE on the deployed Cloud Run instance: error → ticket #9 → authorized `@wakey fix` → workspace fetch → model repro + patch → pytest green → **draft PR #10 published with the tested fix** → review-link comment on the ticket. New product surface: service config API. E10-T2 slice: adversarial injection corpus (16 tests) — off-contract model output parses to nothing and hostile paths are contained by the sandbox gate. **Rotation TODO stands for the GCP SA key (transited chat).**
+
+- 2026-09-16 (deployment session) — **Wakey is LIVE on Google Cloud Run with the full production loop verified.** Deployed via pure REST + service-account JWT (no gcloud): APIs enabled, Artifact Registry repo created, amd64 image pushed, Cloud Run service `wakey` public at https://wakey-4vm7wrj2uq-uc.a.run.app (min-instance=1 for stable SQLite; bind fix: container needs `--host 0.0.0.0`; crypto fix: runtime image now installs `.[secrets]`). GitHub App `wakey-krakujs` created through the live form (browser automation): least-privilege permissions, events Issues/Issue-comment/Pull-request/Push, webhook → Cloud Run URL with matching HMAC secret, installed on krakujs/linux-clipboard-manager. **M0 LIVE GATE PASSED end-to-end in production:** error → public ingest (202) → durable queue → fingerprint → policy → real GitHub ticket #3 → live GLM RCA comment (infra, 0.70). Session/auth hashing + min-instance keep the deployed instance stable. **Rotation TODO: the GCP service-account key transited chat — rotate it in GCP console (IAM → wakey-glm → keys) and replace ~/.config/wakey/gcp-service-account.json.**
+
+- 2026-09-16 (P1 final session) — **Onboarding, secrets, audit chain, GCP route, live-suite skeleton, ops docs.** E3-T1: GitHub App manifest builder + one-time code exchange (contract-tested against the simulator) + fail-closed encrypted storage — the callback refuses to persist the private key without WAKEY_MASTER_KEY; conversion needs no auth (the code is the credential). SEC-4/E10-T3: SecretBox (AES-256-GCM) envelope for reversible secrets wired through storage; setup tokens and session ids now stored as SHA-256 (DB dump cannot authenticate). E10-T4: audit hash chain (prev_hash/entry_hash, migration v5, legacy backfill) with tamper test. E4-T4: `/ingest/gcp/<key>` Pub/Sub push route — OIDC verification when configured, messageId-delivery dedup, envelope dead-lettering. E3-T8: env-gated live G-gate suite (tests/live) — 4 real-write tests, skipped without WAKEY_E2E_*. Docs: threat-model.md (E10-T6 self-review), operations.md runbook (OPS-6), GCP + deploy-event recipes. 264 tests passing + 4 live-gated + 8 container-gated (skipped without credentials/flags), coverage 90.3%, all gates green.
+
+- 2026-09-16 (P1 completion session) — **Registration, hot-reload, sandbox gate, OIDC slice landed.** E3-T5: `POST /api/services` + `/setup` wizard page — one-time ingest key (hash-only storage), immediate-rotation invalidation, admin-gated; the fresh-install path is now product-complete (boot → token → login → register → ingest → ticket). E3-T6: 30s wakey.yml refetch via ForgePort.fetch_file (simulator contents endpoint) → validated → stored config drives policy; invalid file keeps last-good. E10-T2: `make gate-sandbox` — the negative suite runs inside a network-less 512MB/1-CPU/64-pid container, 8/8 green (egress blocked, memory cap, grandchild cleanup, escapes). E4-T4 slice: Pub/Sub envelope decoder + OIDC claims validation with pluggable JWKS verifier (optional `cryptography`). Integrated the parallel session's dashboard pages; 251 tests + 4 container-gated, coverage 90.4%, all gates green. Founder-blocked remainder: GCP live leg, GitHub App exchange, real deploy events, external security review.
+
+- 2026-09-16 (P1 closeout session) — **Dashboard auth, command bus, merge/deploy binding, lifecycle loop, self-watch, backup/restore landed.** R-07 auth closure: single-use setup token (banner + `wakey setup-token --force`), server-side admin sessions (HttpOnly/SameSite=Lax), operational pages gated. E3-T3 command bus: HMAC fail-closed `/webhooks/github`, typed `@wakey` commands (deny-by-default `WAKEY_AUTHORIZED_USERS`). E9-T2: merged-PR → verification window binding + `POST /webhooks/deploy` with deploy-aware grace. WF-04: runtime lifecycle pass auto-closes silent tickets; recurrence reopens instead of re-ticketing. E11: self-watch (OPS-4), `wakey backup/restore` (OPS-6), retention knob, .env loader (R-12). Integrated the parallel session's dashboard pages (fingerprint detail, fix trigger, shared style) — combined tree green. 232 tests, coverage 91.5%, make check + demos + bench green. Still open in P1: E3-T6 config hot-reload (needs live forge), E4-T4 OIDC verification (needs JWKS/crypto slice), E10-T2 capped-container sandbox gate, wizard pages, live gate legs (founder credentials).
+
+- 2026-09-16 (remediation session) — **Packages A–F implemented and verified** (see finding register above): durable delivery ingest with dispatch journal (R-02), two-pass redaction incl. multiline/ids (R-04), severity floor + stored service config + rate windows + ticket/comment caps (R-05), single composition path with real-HTTP startup E2E (R-01), sandbox containment + immutable fix baseline (R-03/R-08), real branch/PR publication verified against the simulator's git data API (R-06), verification watcher closes/reopens tickets + chronic repeat-fix inhibition (R-09), honest security/README/status docs (R-10/R-11), console script + strict config + env alignment (R-12), runtime data untracked (R-13), verified bench + retention (R-14). 185 tests, coverage 91.4% (floor enforced), make check green. Open: dashboard auth, capped-container sandbox gate (live fixing stays disabled), GitHub onboarding wizard, GCP/deploy-event live legs.
+
+- 2026-09-16 (development review) — Recorded R-01–R-14 and ordered remediation in [development-review-2026-09-16.md](development-review-2026-09-16.md). Reviewed baseline: 133 existing tests pass, 87% coverage, ten isolated defect reproductions confirmed. No application fixes implemented by this review; next work package A, then B. Concurrent untracked ticket lifecycle work was excluded from the verified baseline.
 
 - 2026-09-16 (cont. 29) — Ticket lifecycle decisions (E6-T2/T3/T4) done: close-on-silence, recurrence-reopen, ignore-terminal. 4 tests. P1 engines now 100% built. P1 remainder: wizard/registration closeout (E3-T1/T5), CI-on-remote (blocked on push authorization), dead-letter replay + efficiency passes, live gate evidence recording. Process slip: lifecycle code folded into docs commit 347b7b4 via amend — amendment is now banned outright (SKILL follow-up).
 

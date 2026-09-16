@@ -25,7 +25,7 @@ Consume queued LogEvents → parse traces → fingerprint → dedup → decide *
    - http-5xx/other error-rate ≥ `wake.rate_per_min` (default 5) over sliding window;
    - resource/dependency events ≥ `wake.infra_count`;
    - **novel-template spike** (P2, `DET-11`): message template unseen in baseline period appearing ≥ N times/min.
-   `observe` autonomy: same decision logic runs but wake signal is **not emitted** — only recording + counters (assertable in tests via LLM-call counter = 0).
+   `observe` autonomy (contract resolved 2026-09-16, aligning this section with WF-07 §6): the decision logic runs unchanged and the wake signal **is emitted** so the ticket exists for humans; what observe suppresses is **agent dispatch** — no RCA, no fixes (assertable in tests via agent/LLM-call counter = 0, WF-03 §6/§54 unchanged). Tickets created under observe are never queued for RCA.
 8. **Baseline bookkeeping** (P2, `DET-10`): per-service hourly error-rate baselines update continuously; thresholds may auto-widen for chronically noisy services (documented, capped, reversible).
 9. **Emit wake signal** → WF-04 with payload: fingerprint, severity, counts, sample events (redacted), deploy correlation request. Maintenance windows (`DET-8`, P2): during window, wake signals queue instead of firing (post-window evaluation uses queued counts).
 

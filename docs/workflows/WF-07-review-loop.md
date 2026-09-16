@@ -15,7 +15,7 @@ Humans direct the loop from GitHub only: comments on tickets/PRs. This workflow 
 
 ## Steps
 
-1. **Receive & verify**: webhook HMAC check (reject 401 otherwise); dedup by delivery id (WF-02 semantics). Bot's own comments are ignored (loop prevention, hard rule).
+1. **Receive & verify**: webhook HMAC check (reject 401 otherwise); dedup by delivery id (WF-02 semantics). Bot's own comments are ignored (loop prevention, hard rule). *Implemented 2026-09-16:* `POST /webhooks/github` — fail-closed without `WAKEY_WEBHOOK_SECRET`, HMAC per delivery, dedup via the durable delivery store; typed parsing + dispatch in `wakey/web/commands.py` (drop/reopen/explain/status live; fix/retry reply with named refusals until E7-T1/E8-T8 land). Authorization is deny-by-default via `WAKEY_AUTHORIZED_USERS` until installation-permission checks land (G-gate); refusals follow this spec's wording.
 2. **Parse commands** (`RCA-5`): `@wakey fix`, `@wakey explain <target>`, `@wakey retry [feedback]`, `@wakey drop`, `@wakey reopen`, `@wakey status`, (P2) `@wakey suppress <duration> <reason>`. Unknown command → helpful reply listing commands (once per thread to avoid noise). Non-commands ignored.
 3. **Authorize**: responder must have write access to the repo in the installation; else reply "only repo collaborators can direct wakey" + security metric. Every command → audit line (user, command, target).
 4. **Dispatch**:
