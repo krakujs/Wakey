@@ -78,6 +78,18 @@ def create_app(
         logger.warning("readiness probe failed: storage not reachable")
         return JSONResponse({"status": "not-ready", "storage": "unreachable"}, status_code=503)
 
+    @app.get("/api/settings")
+    def settings_summary() -> dict[str, object]:
+        """Non-secret settings view for the settings page (WF-12 §7)."""
+        return {
+            "port": settings.port,
+            "base_url": settings.base_url,
+            "database": "postgres" if settings.database_url else "sqlite",
+            "llm_configured": bool(settings.llm_base_url and settings.llm_api_key),
+            "llm_model": settings.llm_model or None,
+            "log_level": settings.log_level,
+        }
+
     @app.get("/metrics")
     def prometheus_metrics() -> Response:
         return Response(content=metrics.render(), media_type="text/plain; version=0.0.4")
