@@ -41,3 +41,6 @@ clean: ## remove caches and build artifacts
 
 demo-two-services: ## run the two-dummy-service pipeline demo (7 scenarios)
 	.venv/bin/python demo/two_service_demo.py
+
+demo-m0: ## M0 gate rehearsal with simulated GitHub (no live calls)
+	.venv/bin/python demo/m0_gate_rehearsal.py

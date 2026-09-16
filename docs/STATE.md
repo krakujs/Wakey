@@ -97,10 +97,13 @@ See `docs/TASKS.md` for the authoritative per-task status. (Keep this table epic
 10. ✅ E3 GitHub adapter core — done (ForgePort implementation + 6 fixture contract tests; registration wizard + live gate need founder credentials)
 11. ✅ M1 RCA skeleton started — heuristic classifier (infra/config/code-fix/needs-human + confidence), RCA comment posting, audit; live model tier needs key/Ollama
 12. ⏳ M0 live gate: real GCP error -> real GitHub ticket (blocked on founder credentials)
+    ✅ 9b. M0 REHEARSAL with simulated GitHub: done — make demo-m0 / tests/e2e/test_m0_rehearsal.py (real adapter over loopback HTTP to the local simulator; simulated token only)
 
 Rules: `make check` green per task; commit per task with trailers; spec updates ride along; STATE session log updated at wrap-up or gate.
 
 ## Session log (most recent first, one line per session)
+
+- 2026-09-16 (cont. 6) — **Local GitHub simulator** (forge/simulator.py): in-memory GitHub API subset with token auth; M0 gate rehearsal runs GitHubAdapter over loopback HTTP to it — full production path with a simulated credential, zero live calls (make demo-m0 + e2e test). 94 tests green. Founder directive honored: no live GitHub touched.
 
 - 2026-09-16 (cont. 5) — RCA agent skeleton: heuristic classifier (infra/config/code-fix/needs-human with confidence), forge comment posting, audit. Tests caught a case-sensitivity bug in the markers. 93 tests green. Development ≈ 22% of backlog tasks; M0 rehearsal done, M1 skeleton done, M2 fix agent + M3 hardening remaining.
 
