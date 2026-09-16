@@ -55,6 +55,17 @@ _TEXT_SEVERITY = {
 }
 
 
+@dataclass(frozen=True)
+class EventContext:
+    """Everything that stays constant while normalizing one payload."""
+
+    service: str
+    environment: str
+    source: str
+    delivery_id: str = "delivery"
+    fallback_ts: datetime | None = None
+
+
 @dataclass
 class ParseOutcome:
     """Events ready for the pipeline + lines that need the dead-letter path."""
@@ -70,10 +81,10 @@ def map_severity(raw: str | int) -> Severity:
     return _TEXT_SEVERITY.get(raw.strip().lower(), Severity.INFO)
 
 
-def _stable_event_id(service: str, source: str, line: str) -> str:
-    """Deterministic id when the payload carries none (idempotent replay)."""
-    digest = hashlib.sha256(f"{service}|{source}|{line}".encode()).hexdigest()[:16]
-    return f"evt-{digest}"
+def _stable_event_id(service: str, source: str, delivery_id: str, index: int, line: str) -> str:
+    """Deterministic per-delivery id: same delivery replayed -> same ids (WF-02 §7)."""
+    material = f"{service}|{source}|{delivery_id}|{index}|{line}"
+    return f"evt-{hashlib.sha256(material.encode()).hexdigest()[:16]}"
 
 
 def _parse_timestamp(raw: object, fallback: datetime) -> datetime:
@@ -95,16 +106,15 @@ def _first_key(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return None
 
 
-def _event_from_json(
-    data: dict[str, Any], service: str, environment: str, source: str, fallback_ts: datetime
-) -> LogEvent:
+def _event_from_json(data: dict[str, Any], ctx: EventContext, index: int) -> LogEvent:
     message = _first_key(data, _MESSAGE_KEYS)
     if message is None or not str(message).strip():
         message = json.dumps(data)
     severity_raw = _first_key(data, _SEVERITY_KEYS)
     severity = map_severity(severity_raw) if severity_raw is not None else Severity.INFO
+    canonical = json.dumps(data, sort_keys=True)
     event_id = _first_key(data, ("id", "event_id")) or _stable_event_id(
-        service, source, json.dumps(data, sort_keys=True)
+        ctx.service, ctx.source, ctx.delivery_id, index, canonical
     )
     attributes = {
         k: str(v)
@@ -113,14 +123,14 @@ def _event_from_json(
     }
     return LogEvent(
         id=str(event_id),
-        ts=_parse_timestamp(_first_key(data, _TIMESTAMP_KEYS), fallback_ts),
-        service=service,
-        environment=environment,
+        ts=_parse_timestamp(_first_key(data, _TIMESTAMP_KEYS), ctx.fallback_ts or utcnow()),
+        service=ctx.service,
+        environment=ctx.environment,
         severity=severity,
         message=str(message),
-        source=source,
-        trace_id=_first_key(data, _TRACE_KEYS) and str(_first_key(data, _TRACE_KEYS)),
-        request_id=_first_key(data, _REQUEST_KEYS) and str(_first_key(data, _REQUEST_KEYS)),
+        source=ctx.source,
+        trace_id=(str(v) if (v := _first_key(data, _TRACE_KEYS)) is not None else None),
+        request_id=(str(v) if (v := _first_key(data, _REQUEST_KEYS)) is not None else None),
         attributes=attributes,
     )
 
@@ -136,22 +146,16 @@ def _parse_logfmt_line(line: str) -> dict[str, str] | None:
     data = {key: value.strip('"') for key, value in tokens}
     prefix = _LOGFMT_TOKEN.sub("", line, count=1).strip()
     if prefix and "message" not in data and "msg" not in data:
-        data["message"] = prefix.split("=", 1)[0].strip() or prefix
+        data["message"] = prefix
     return data
 
 
-def parse_events(
-    raw: str,
-    service: str,
-    environment: str,
-    source: str,
-    fallback_ts: datetime | None = None,
-) -> ParseOutcome:
+def parse_events(raw: str, ctx: EventContext) -> ParseOutcome:
     """Normalize a raw payload (any mix of JSON lines, logfmt, plain text)."""
     outcome = ParseOutcome()
-    fallback = fallback_ts or utcnow()
+    fallback = ctx.fallback_ts or utcnow()
 
-    for line in raw.splitlines():
+    for index, line in enumerate(raw.splitlines()):
         stripped = line.strip()
         if not stripped:
             continue
@@ -165,28 +169,26 @@ def parse_events(
                 outcome.dead_letters.append((stripped, f"unparseable JSON: {exc.msg}"))
                 continue
             if isinstance(data, dict):
-                outcome.events.append(
-                    _event_from_json(data, service, environment, source, fallback)
-                )
+                outcome.events.append(_event_from_json(data, ctx, index))
             else:
                 outcome.dead_letters.append((stripped, "JSON must be an object"))
             continue
         logfmt = _parse_logfmt_line(stripped)
         if logfmt is not None:
-            outcome.events.append(_event_from_json(logfmt, service, environment, source, fallback))
+            outcome.events.append(_event_from_json(logfmt, ctx, index))
             continue
         severity = Severity.ERROR if stripped.startswith("Traceback") else Severity.INFO
         if re.search(r"\b(ERROR|CRITICAL|FATAL|PANIC)\b", stripped):
             severity = Severity.ERROR
         outcome.events.append(
             LogEvent(
-                id=_stable_event_id(service, source, stripped),
+                id=_stable_event_id(ctx.service, ctx.source, ctx.delivery_id, index, stripped),
                 ts=fallback,
-                service=service,
-                environment=environment,
+                service=ctx.service,
+                environment=ctx.environment,
                 severity=severity,
                 message=stripped,
-                source=source,
+                source=ctx.source,
             )
         )
     return outcome

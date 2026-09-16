@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS fingerprints (
     last_seen TEXT NOT NULL,
     occurrences INTEGER NOT NULL DEFAULT 0,
     state TEXT NOT NULL,
-    ticket_issue_id INTEGER,
+    ticket_issue_id TEXT,
     ticket_url TEXT
 );
 CREATE TABLE IF NOT EXISTS delivery_ids (
@@ -114,6 +114,9 @@ class Storage(ABC):
     def get_service(self, name: str) -> Service | None: ...
 
     @abstractmethod
+    def get_service_by_ingest_key_hash(self, key_hash: str) -> Service | None: ...
+
+    @abstractmethod
     def record_occurrence(self, incoming: Fingerprint, delta: int = 1) -> Fingerprint:
         """Insert or update a fingerprint, absorbing ``delta`` occurrences.
 
@@ -124,6 +127,10 @@ class Storage(ABC):
 
     @abstractmethod
     def get_fingerprint(self, fp_hash: str) -> Fingerprint | None: ...
+
+    @abstractmethod
+    def save_fingerprint(self, fingerprint: Fingerprint) -> None:
+        """Persist the fingerprint exactly as given (state transitions, ticket refs)."""
 
     @abstractmethod
     def save_log_event(self, event: LogEvent) -> None: ...
@@ -215,12 +222,29 @@ class SQLiteStorage(Storage):
             ingest_key_hash=row["ingest_key_hash"],
         )
 
+    def get_service_by_ingest_key_hash(self, key_hash: str) -> Service | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM services WHERE ingest_key_hash = ?", (key_hash,)
+            ).fetchone()
+        if row is None:
+            return None
+        return Service(
+            name=row["name"],
+            repo=row["repo"],
+            path=row["path"],
+            forge=row["forge"],
+            environment=row["environment"],
+            ingest_key_hash=row["ingest_key_hash"],
+        )
+
     # --- fingerprints --------------------------------------------------------
 
     def record_occurrence(self, incoming: Fingerprint, delta: int = 1) -> Fingerprint:
         with self._lock, self._conn:
             row = self._conn.execute(
-                "SELECT occurrences, first_seen FROM fingerprints WHERE fp_hash = ?",
+                "SELECT occurrences, first_seen, state, ticket_issue_id, ticket_url "
+                "FROM fingerprints WHERE fp_hash = ?",
                 (incoming.fp_hash,),
             ).fetchone()
             if row is None:
@@ -237,20 +261,21 @@ class SQLiteStorage(Storage):
                 update={
                     "occurrences": int(row["occurrences"]) + delta,
                     "first_seen": _from_iso(row["first_seen"]),
+                    # counters change; lifecycle state and ticket refs are DB truth
+                    "state": WorkState(row["state"]),
+                    "ticket_issue_id": row["ticket_issue_id"],
+                    "ticket_url": row["ticket_url"],
                 }
             )
             self._conn.execute(
                 "UPDATE fingerprints SET template=?, frames_json=?, severity=?, last_seen=?, "
-                "occurrences=?, state=?, ticket_issue_id=?, ticket_url=? WHERE fp_hash=?",
+                "occurrences=? WHERE fp_hash=?",
                 (
                     merged.template,
                     json.dumps([frame.model_dump() for frame in merged.frames]),
                     merged.severity.value,
                     _iso(merged.last_seen),
                     merged.occurrences,
-                    merged.state.value,
-                    merged.ticket_issue_id,
-                    merged.ticket_url,
                     merged.fp_hash,
                 ),
             )
@@ -277,6 +302,20 @@ class SQLiteStorage(Storage):
             ticket_issue_id=row["ticket_issue_id"],
             ticket_url=row["ticket_url"],
         )
+
+    def save_fingerprint(self, fingerprint: Fingerprint) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO fingerprints (fp_hash, service, environment, template, "
+                "frames_json, severity, first_seen, last_seen, occurrences, state, "
+                "ticket_issue_id, ticket_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(fp_hash) DO UPDATE SET template=excluded.template, "
+                "frames_json=excluded.frames_json, severity=excluded.severity, "
+                "last_seen=excluded.last_seen, occurrences=excluded.occurrences, "
+                "state=excluded.state, ticket_issue_id=excluded.ticket_issue_id, "
+                "ticket_url=excluded.ticket_url",
+                _fingerprint_params(fingerprint),
+            )
 
     # --- events & audit ------------------------------------------------------
 

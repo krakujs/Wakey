@@ -58,18 +58,23 @@ def test_occurrence_accumulation_preserves_first_seen(storage: SQLiteStorage) ->
     stored = storage.record_occurrence(first)
     assert stored.occurrences == 1
 
-    later = make_fingerprint(
-        last_seen=datetime.now(UTC) + timedelta(minutes=5),
-        state=WorkState.INVESTIGATING,
-    )
+    later = make_fingerprint(last_seen=datetime.now(UTC) + timedelta(minutes=5))
     merged = storage.record_occurrence(later, delta=9)
     assert merged.occurrences == 10
-    assert merged.state is WorkState.INVESTIGATING  # caller owns state
+    assert merged.state is WorkState.NEW  # DB owns lifecycle state on updates
     assert merged.first_seen == stored.first_seen  # DB preserves origin
+
+    # explicit state transition via save_fingerprint survives later occurrences
+    opened = storage.get_fingerprint(first.fp_hash)
+    assert opened is not None
+    storage.save_fingerprint(opened.model_copy(update={"state": WorkState.INVESTIGATING}))
+    after = storage.record_occurrence(later)
+    assert after.state is WorkState.INVESTIGATING
+    assert after.occurrences == 11  # delta still counted on top of saved state
 
     fetched = storage.get_fingerprint(first.fp_hash)
     assert fetched is not None
-    assert fetched.occurrences == 10
+    assert fetched.occurrences == 11
     assert fetched.frames[0].function == "connect"
     assert fetched.severity is Severity.ERROR
 

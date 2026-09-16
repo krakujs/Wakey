@@ -121,7 +121,7 @@ class Fingerprint(BaseModel):
     last_seen: datetime = Field(default_factory=utcnow)
     occurrences: int = Field(default=0, ge=0)
     state: WorkState = WorkState.NEW
-    ticket_issue_id: int | None = None
+    ticket_issue_id: str | None = None
     ticket_url: str | None = None
 
 
