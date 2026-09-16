@@ -103,6 +103,8 @@ Rules: `make check` green per task; commit per task with trailers; spec updates 
 
 ## Session log (most recent first, one line per session)
 
+- 2026-09-16 (cont. 12) — `wakey doctor` command live (E3-T7 core): synthetic error through the real pipeline; ConsoleForge gained open_draft_proposal (protocol now fully implemented by both adapters). 103 tests green. Development ≈ 38% of backlog. Next buildable: fix-proposal delivery wiring (fix diff -> draft PR via adapter), verification watcher scheduling, GUI pages; live gates still await founder GitHub token use in .env (already stored) + LLM endpoint.
+
 - 2026-09-16 (cont. 11) — E8-T5 core done: ForgePort.open_draft_proposal + GitHub draft-PR adapter + simulator /pulls endpoint + contract test. 103 tests green. History note: this content landed folded into a docs commit (5fe5f79) — content verified, message under-describes it; amend usage is now banned in session protocol.
 
 - 2026-09-16 (cont. 10) — **Live GitHub check PASS**: founder token (stored in .env only, allowlist-guarded adapter) created issue #1 + comment on krakujs/linux-clipboard-manager through the real GitHubAdapter. Adapter refactored to GitHubConfig dataclass + allowlist guard. SKILL.md section 8: repo allowlist never-rule. Token rotation recommended after test phase (shared via chat). 102 tests green.
