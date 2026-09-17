@@ -47,12 +47,16 @@ pytestmark = pytest.mark.skipif(not _pg_up(), reason="Postgres not reachable")
 
 
 @pytest.fixture()
-def storage():
-    st = PostgresStorage(DSN)
-    with st._lock, st._conn.transaction():  # noqa: SLF001 — isolation reset
-        st._conn.execute(
-            "TRUNCATE fingerprints, log_events, deliveries, deployments, audit, secrets, services"
-        )
+def storage(request):
+    """One fresh database per xdist worker — parallel-safe isolation (OPS-5)."""
+    worker = getattr(request.config, "workerinput", {}).get("workerid", "master")
+    dbname = f"wakey_test_{worker}"
+    base = DSN.rsplit("/", 1)[0]
+    admin = psycopg.connect(base + "/postgres", autocommit=True)
+    admin.execute(f'DROP DATABASE IF EXISTS "{dbname}" WITH (FORCE)')
+    admin.execute(f'CREATE DATABASE "{dbname}"')
+    admin.close()
+    st = PostgresStorage(f"{base}/{dbname}")
     yield st
     st.close()
 
