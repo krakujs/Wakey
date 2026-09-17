@@ -13,6 +13,7 @@ Tests are skipped when the server is not reachable.
 from __future__ import annotations
 
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -34,13 +35,19 @@ from wakey.storage.postgres import PostgresStorage, _fingerprint_params
 DSN = os.environ.get("WAKEYPG_TEST_DSN", "postgresql://postgres:wakey@127.0.0.1:55432/wakey")
 
 
-def _pg_up() -> bool:
-    try:
-        conn = psycopg.connect(DSN, connect_timeout=3)
-    except Exception:  # pragma: no cover — environment without Postgres
-        return False
-    conn.close()
-    return True
+def _pg_up(timeout_s: float = 30.0) -> bool:
+    """Probe with retries: service containers may lag job start (CI)."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            conn = psycopg.connect(DSN, connect_timeout=3)
+        except Exception:  # pragma: no cover — only until reachable
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(1)
+            continue
+        conn.close()
+        return True
 
 
 pytestmark = pytest.mark.skipif(not _pg_up(), reason="Postgres not reachable")
