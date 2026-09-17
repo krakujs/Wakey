@@ -31,6 +31,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 from cryptography.hazmat.primitives import hashes
@@ -264,8 +265,12 @@ def ensure_pubsub_push(
     print(f"  pub/sub push subscription {subscription} → {endpoint}")
 
 
-def load_env_pairs(path: Path, database_url: str) -> dict[str, str]:
-    pairs: dict[str, str] = {}
+def load_env_pairs(
+    path: Path, database_url: str, environ: Mapping[str, str] = os.environ
+) -> dict[str, str]:
+    # start from the process environment so CI-exported WAKEY_* secrets
+    # flow through, then overlay the optional .env file
+    pairs = {k: v for k, v in environ.items() if k.startswith("WAKEY_")}
     for raw_line in path.read_text().splitlines():
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:

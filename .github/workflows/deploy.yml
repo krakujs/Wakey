@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Production CD (OPS): deploys main to Cloud Run after CI succeeds on main.
+# Gated by the `production` environment (requires approval from the repo
+# owner). Secrets come from repo/environment secrets — never from .env.
+
+name: deploy
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deploy dependencies
+        run: python -m pip install --quiet cryptography
+
+      - name: Write service-account key
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          mkdir -p ~/.config/wakey
+          printf '%s' "$GCP_SA_KEY" > ~/.config/wakey/gcp-service-account.json
+          chmod 600 ~/.config/wakey/gcp-service-account.json
+
+      - name: Deploy to Cloud Run
+        env:
+          WAKEY_MASTER_KEY: ${{ secrets.WAKEY_MASTER_KEY }}
+          WAKEY_WEBHOOK_SECRET: ${{ secrets.WAKEY_WEBHOOK_SECRET }}
+          WAKEY_GITHUB_TOKEN: ${{ secrets.WAKEY_GITHUB_TOKEN }}
+          WAKEY_GITHUB_REPO: ${{ secrets.WAKEY_GITHUB_REPO }}
+          WAKEY_ALLOWED_REPOS: ${{ secrets.WAKEY_ALLOWED_REPOS }}
+          WAKEY_LLM_BASE_URL: ${{ secrets.WAKEY_LLM_BASE_URL }}
+          WAKEY_LLM_API_KEY: ${{ secrets.WAKEY_LLM_API_KEY }}
+          WAKEY_LLM_MODEL: ${{ secrets.WAKEY_LLM_MODEL }}
+          WAKEY_AUTHORIZED_USERS: ${{ secrets.WAKEY_AUTHORIZED_USERS }}
+          WAKEY_DATABASE_URL: ${{ secrets.WAKEY_DATABASE_URL }}
+          WAKEY_SELF_WATCH: "1"
+          WAKEY_RETENTION_DAYS: "30"
+        run: |
+          python scripts/gcp_deploy.py all \
+            --project "${{ vars.GCP_PROJECT || 'wakey-ai' }}" \
+            --region "${{ vars.GCP_REGION || 'us-central1' }}" \
+            --image-tag "sha-${GITHUB_SHA::7}" \
+            --database-url "$WAKEY_DATABASE_URL"
+
+      - name: Smoke-test the deployment
+        run: |
+          sleep 5
+          curl -fsS "https://wakey-4vm7wrj2uq-uc.a.run.app/readyz" | tee /dev/stderr | grep -q '"status":"ready"'
