@@ -24,7 +24,7 @@ ENV WAKEY_DATA_DIR=/var/lib/wakey \
 EXPOSE 8477
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8477/healthz', timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request; port = os.environ.get('WAKEY_PORT') or os.environ.get('PORT') or '8477'; urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz', timeout=4)"]
 
 # 0.0.0.0 inside the container is standard and required for the published
 # port to be reachable; the container network itself provides isolation

@@ -41,6 +41,21 @@ def test_settings_defaults_and_env_overrides() -> None:
     assert str(tuned.data_dir) == "/var/lib/wakey"
 
 
+def test_platform_port_env_used_when_wakey_port_absent() -> None:
+    """Cloud Run / App Runner inject PORT and startup-probe it (OPS bugfix)."""
+    from_platform = Settings.from_env({"PORT": "8080"})
+    assert from_platform.port == 8080
+    explicit = Settings.from_env({"PORT": "8080", "WAKEY_PORT": "9000"})
+    assert explicit.port == 9000, "explicit WAKEY_PORT must beat platform PORT"
+    assert Settings.from_env({}).port == 8477
+
+
+def test_settings_rejects_bad_platform_port() -> None:
+    with pytest.raises(ConfigError) as excinfo:
+        Settings.from_env({"PORT": "http"})
+    assert any("PORT" in message for message in excinfo.value.problems)
+
+
 def test_settings_rejects_bad_port_and_log_level_together() -> None:
     with pytest.raises(ConfigError) as excinfo:
         Settings.from_env({"WAKEY_PORT": "abc", "WAKEY_LOG_LEVEL": "LOUD"})

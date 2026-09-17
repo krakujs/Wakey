@@ -190,6 +190,9 @@ def ensure_service(
     *,
     env_pairs: dict[str, str],
 ) -> str:
+    # Cloud Run routes to containerPort 8080 and startup-probes it; the
+    # app must bind that port or instances fail readiness and churn.
+    env_pairs = {**env_pairs, "WAKEY_PORT": "8080"}
     url = f"https://run.googleapis.com/v2/projects/{project}/locations/{region}/services/{name}"
     template = {
         "timeout": "300s",

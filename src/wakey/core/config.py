@@ -101,10 +101,15 @@ class Settings(BaseModel):
         if env.get("WAKEY_SELF_WATCH", "").strip().lower() in {"1", "true", "yes"}:
             parsed["self_watch"] = True
 
+        # Port precedence by override order: the platform-injected PORT
+        # (Cloud Run / App Runner probe it — binding anything else there
+        # fails readiness and instances churn) parses first; an explicit
+        # WAKEY_PORT then overrides it.
         for env_key, field_name in (
             ("WAKEY_WORKER_COUNT", "worker_count"),
             ("WAKEY_RCA_MAX_PER_HOUR", "rca_max_per_hour"),
             ("WAKEY_RETENTION_DAYS", "retention_days"),
+            ("PORT", "port"),
             ("WAKEY_PORT", "port"),
         ):
             if raw := env.get(env_key):
