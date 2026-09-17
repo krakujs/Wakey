@@ -20,8 +20,9 @@ permissions:
 
 jobs:
   image:
+    # Tag pushes are owner actions; the production environment gate
+    # (approval) applies to the CD workflow that mutates the live service.
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
