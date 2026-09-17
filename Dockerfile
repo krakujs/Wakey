@@ -26,4 +26,7 @@ EXPOSE 8477
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8477/healthz', timeout=4)"]
 
-CMD ["python", "-m", "wakey", "serve"]
+# 0.0.0.0 inside the container is standard and required for the published
+# port to be reachable; the container network itself provides isolation
+# (the loopback-by-default protection applies to local, non-container runs).
+CMD ["python", "-m", "wakey", "serve", "--host", "0.0.0.0"]

@@ -42,7 +42,15 @@ The console prints a one-time **setup token** — you'll paste it in the
 browser to unlock the dashboard (single use, expires in 30 minutes; lost it?
 `wakey setup-token --force`).
 
-**With Docker:**
+**With Docker (published image):**
+
+```bash
+docker run -d --name wakey -p 8477:8477 \
+  -e WAKEY_MASTER_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") \
+  ghcr.io/krakujs/wakey:0.1.0
+```
+
+**Or build locally:**
 
 ```bash
 docker compose up --build
@@ -165,6 +173,7 @@ tests run inside a network-less, memory/CPU-capped container.
 | Doc | Contents |
 |---|---|
 | [docs/operations.md](docs/operations.md) | Runbook: health, backup/restore, retention, background passes |
+| [AGENTS.md](AGENTS.md) | Machine-actionable guide for AI agents operating Wakey |
 | [docs/threat-model.md](docs/threat-model.md) | Security posture, assets, controls, accepted risks |
 | [docs/security-review.md](docs/security-review.md) | Control checklist with test evidence |
 | [docs/workflows/](docs/workflows/) | Behavioral specs WF-01…WF-15 (ingest, RCA, fixes, verification…) |

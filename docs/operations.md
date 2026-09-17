@@ -63,6 +63,21 @@ declaring success. Recommended cadence: daily backup, one restore drill
 per month (the drill is: backup → wipe data dir → restore → `wakey
 doctor` exits 0).
 
+## Storage backends: SQLite (default) and Postgres (OPS-5)
+
+Wakey defaults to SQLite at `<data-dir>/wakey.db`. For production
+deployments, point `WAKEY_DATABASE_URL` at a Postgres DSN:
+
+```bash
+WAKEY_DATABASE_URL=postgresql://wakey:<password>@db-host:5432/wakey
+```
+
+Behavior is identical across backends (same Storage contract, same tests):
+durable deliveries with `FOR UPDATE SKIP LOCKED` claiming, fingerprint
+upserts that preserve lifecycle truth, hash-chained audit, SecretBox
+encryption hooks. Backups for Postgres use `pg_dump` on a schedule; the
+`wakey backup` command is SQLite-only.
+
 ## Retention (R-14)
 
 Events and settled deliveries (completed/failed) are pruned at boot and
