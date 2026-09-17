@@ -16,6 +16,7 @@ state are investigated — observe-mode tickets never reach this module.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -79,6 +80,9 @@ def classify(fingerprint: Fingerprint) -> RcaResult:
     if fingerprint.frames:
         return RcaResult("needs-human", 0.4, "Error with stack context but no recognised pattern.")
     return RcaResult("needs-human", 0.2, "No stack frames and no known pattern — needs human eyes.")
+
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRca:
@@ -145,7 +149,13 @@ class RcaBudget:
 
 
 class RcaDispatcher:
-    """One pass = investigate every fingerprint queued for RCA (WF-05 §6)."""
+    """One pass = investigate every fingerprint queued for RCA (WF-05 §6).
+
+    With ``auto_fix`` wired, an RCA verdict of ``code-fix`` at or above the
+    service confidence floor triggers the fix executor automatically — the
+    autonomy=fix dial in action (WF-06 §2). The executor re-runs the full
+    FIX-1 gate, so this trigger is defense-supported, not authority.
+    """
 
     def __init__(
         self,
@@ -156,6 +166,7 @@ class RcaDispatcher:
         budget: RcaBudget | None = None,
         redactor: RedactionEngine | None = None,
         clock: Callable[[], datetime] = utcnow,
+        auto_fix: Callable[[Fingerprint], object] | None = None,
     ) -> None:
         self._storage = storage
         self._forge = forge
@@ -163,6 +174,7 @@ class RcaDispatcher:
         self._budget = budget if budget is not None else RcaBudget()
         self._redactor = redactor if redactor is not None else RedactionEngine()
         self._clock = clock
+        self._auto_fix = auto_fix
 
     def run_once(self) -> list[str]:
         """Investigate queued fingerprints; returns the hashes processed."""
@@ -172,8 +184,20 @@ class RcaDispatcher:
                 continue
             if not self._budget.try_take(self._clock().timestamp()):
                 break  # cap reached: leave the rest queued for the next pass
-            self.investigate(fingerprint)
+            result = self.investigate(fingerprint)
             processed.append(fingerprint.fp_hash)
+            # autonomy=fix dial: a confident code-fix verdict goes straight
+            # to the fix executor; it re-runs the full FIX-1 gate and
+            # chronic/PR-cap checks before touching a workspace (WF-06 §2)
+            if (
+                result.classification == "code-fix"
+                and self._auto_fix is not None
+                and not fingerprint.chronic
+            ):
+                try:
+                    self._auto_fix(fingerprint)
+                except Exception:  # noqa: BLE001 — auto-fix must not kill RCA
+                    logger.exception("auto-fix dispatch failed for %s", fingerprint.fp_hash)
         return processed
 
     def investigate(self, fingerprint: Fingerprint) -> RcaResult:

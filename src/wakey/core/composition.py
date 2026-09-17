@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from wakey.agents.fix_executor import FixExecutionOutcome, FixExecutor
 from wakey.agents.llm import AnthropicCompatibleModel
 from wakey.agents.rca import ModelRca, RcaBudget, RcaDispatcher
-from wakey.core.config import ConfigError, ServiceYaml, Settings, load_wakey_yaml
+from wakey.core.config import Autonomy, ConfigError, ServiceYaml, Settings, load_wakey_yaml
 from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import AuditEvent, Fingerprint, WorkState, utcnow
 from wakey.core.storage import SQLiteStorage, Storage
@@ -223,6 +223,24 @@ def build_fix_executor(
     )
 
 
+def build_fix_trigger(storage: Storage, fix_executor: FixExecutor) -> Callable[[Fingerprint], None]:
+    """autonomy=fix dial (WF-06 §2): unattended fix dispatch after RCA.
+
+    The RCA dispatcher calls this for confident code-fix verdicts; the
+    executor re-runs the full FIX-1 gate (chronic, PR cap, floor) so a race
+    or config flip between the two checks stays safe. Services on any lower
+    autonomy dial never see a fix attempt.
+    """
+
+    def trigger(fingerprint: Fingerprint) -> None:
+        config = _stored_config(storage, fingerprint.service)
+        if config.autonomy is not Autonomy.FIX:
+            return
+        fix_executor.execute(fingerprint, config)
+
+    return trigger
+
+
 def _parse_authorized(settings: Settings) -> frozenset[str]:
     return frozenset(u.strip() for u in settings.authorized_users.split(",") if u.strip())
 
@@ -271,6 +289,7 @@ def compose(settings: Settings, forge: ForgePort | None = None) -> Components:
     worker = DeliveryWorker(storage, pipeline, redactor, metrics=metrics)
     pool = DeliveryWorkerPool(worker, count=settings.worker_count)
 
+    fix_executor = build_fix_executor(settings, storage, forge)
     model_rca = build_model_rca(settings, redactor)
     rca = RcaDispatcher(
         storage,
@@ -278,6 +297,7 @@ def compose(settings: Settings, forge: ForgePort | None = None) -> Components:
         model_rca=model_rca,
         budget=RcaBudget(max_per_hour=settings.rca_max_per_hour),
         redactor=redactor,
+        auto_fix=build_fix_trigger(storage, fix_executor) if fix_executor else None,
     )
 
     def deployed_checker(fingerprint: Fingerprint) -> bool:
@@ -333,7 +353,6 @@ def compose(settings: Settings, forge: ForgePort | None = None) -> Components:
 
     auth = AuthManager(storage)
     authorized = _parse_authorized(settings)
-    fix_executor = build_fix_executor(settings, storage, forge)
     commands = build_commands(
         storage,
         forge=forge,
