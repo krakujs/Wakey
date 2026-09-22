@@ -17,8 +17,8 @@ from wakey.agents.fix_executor import FixExecutor
 from wakey.agents.models import ModelReply
 from wakey.agents.rca import ModelRca, RcaDispatcher
 from wakey.agents.workspace import Workspace
-from wakey.core.composition import build_fix_trigger
-from wakey.core.config import Autonomy, ServiceYaml
+from wakey.core.composition import build_fix_trigger, compose
+from wakey.core.config import Autonomy, ServiceYaml, Settings
 from wakey.core.models import Fingerprint, Service, Severity, TraceFrame, WorkState
 from wakey.core.storage import SQLiteStorage
 from wakey.forge.port import ConsoleForge
@@ -216,3 +216,31 @@ def test_low_confidence_verdict_stops_at_rca(tmp_path, green):
     assert stored is not None and stored.state is WorkState.OPEN
     assert not forge.branches, "below-floor verdicts must not reach a workspace"
     storage.close()
+
+
+def test_compose_wires_auto_fix_when_executor_exists(tmp_path: Path) -> None:
+    """Composition closure: with forge + model credentials the RCA dispatcher
+    is built with the autonomy-gated fix trigger attached (no manual wiring)."""
+    settings = Settings(
+        data_dir=tmp_path,
+        github_token="tok",
+        github_repo="acme/fixture",
+        llm_base_url="http://127.0.0.1:9",
+        llm_api_key="k",
+    )
+    components = compose(settings)
+    try:
+        assert components.fix_executor is not None
+        assert components.rca._auto_fix is not None  # noqa: SLF001 — wiring under test
+    finally:
+        components.storage.close()
+
+
+def test_compose_omits_auto_fix_without_executor(tmp_path: Path) -> None:
+    """Without model credentials there is no executor and no auto-fix path."""
+    components = compose(Settings(data_dir=tmp_path))
+    try:
+        assert components.fix_executor is None
+        assert components.rca._auto_fix is None  # noqa: SLF001 — wiring under test
+    finally:
+        components.storage.close()

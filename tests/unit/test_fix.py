@@ -15,6 +15,7 @@ from wakey.agents.fix import (
     check_eligibility,
     safe_resolve,
 )
+from wakey.agents.fix import TestOutcome as FixTestOutcome
 from wakey.core.config import Autonomy
 from wakey.core.models import Fingerprint, Severity
 
@@ -75,6 +76,25 @@ def test_eligibility_gate_refusal_reasons() -> None:
 
     ok = EligibilityInput("code-fix", 0.9, Autonomy.FIX, 0.75, 0, 3)
     assert check_eligibility(ok).allowed
+
+
+@pytest.mark.parametrize("mode", [Autonomy.TRIAGE, Autonomy.DIGEST, Autonomy.FIX])
+def test_explicit_fix_acknowledges_chronic_guard(mode):
+    assert check_eligibility(
+        EligibilityInput("code-fix", 0.9, mode, 0.75, 0, 3, chronic=True, human_requested=True)
+    ).allowed
+    assert not check_eligibility(
+        EligibilityInput("code-fix", 0.9, Autonomy.OBSERVE, 0.75, 0, 3, human_requested=True)
+    ).allowed
+
+
+def test_repro_alias_cannot_be_patched(tmp_path):
+    (tmp_path / "tests").mkdir()
+    fixer = ReproFirstFixer(ScriptedProposer())
+    with pytest.raises(SandboxError, match="own reproduction"):
+        fixer._validate_patch(
+            tmp_path, {"tests/../tests/test_repro.py": "pass"}, "tests/test_repro.py"
+        )
 
 
 def test_repro_first_loop_end_to_end(tmp_path: Path) -> None:
@@ -194,12 +214,15 @@ def test_proposer_cannot_escape_workspace_or_touch_repro(tmp_path: Path) -> None
         ) -> dict[str, str]:
             return {"tests/test_repro.py": "def test_weakened():\n    assert True\n"}
 
+    fresh_workspace = tmp_path / "fresh"
+    fresh_workspace.mkdir()
+    make_workspace(fresh_workspace)
     with pytest.raises(SandboxError):
         ReproFirstFixer(ReproTamperer(), max_iterations=2).execute(
-            workspace,
+            fresh_workspace,
             make_fingerprint(),
             "boom",
-            [sys.executable, "-m", "pytest", "-q", str(workspace)],
+            [sys.executable, "-m", "pytest", "-q", str(fresh_workspace)],
         )
 
 
@@ -225,3 +248,40 @@ def test_non_reproducible_bug_aborts(tmp_path: Path) -> None:
     )
     assert not result.ok
     assert "does not reproduce" in result.reason
+
+
+def test_preexisting_failures_may_remain_only_when_repro_is_fixed(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    outcomes = iter(
+        (
+            FixTestOutcome(False, "FAILED tests/test_existing.py::test_legacy"),
+            FixTestOutcome(
+                False,
+                "FAILED tests/test_existing.py::test_legacy\n"
+                "FAILED tests/test_repro.py::test_missing_key_returns_none",
+            ),
+            FixTestOutcome(False, "FAILED tests/test_existing.py::test_legacy"),
+        )
+    )
+    result = ReproFirstFixer(
+        ScriptedProposer(), runner=lambda *_args: next(outcomes), max_iterations=1
+    ).execute(workspace, make_fingerprint(), "legacy KeyError", ["pytest"])
+
+    assert result.ok
+    assert "1 pre-existing failure" in result.reason
+
+
+def test_repro_must_add_failure_when_suite_is_already_red(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    outcomes = iter(
+        (
+            FixTestOutcome(False, "FAILED tests/test_existing.py::test_legacy"),
+            FixTestOutcome(False, "FAILED tests/test_existing.py::test_legacy"),
+        )
+    )
+    result = ReproFirstFixer(
+        ScriptedProposer(), runner=lambda *_args: next(outcomes), max_iterations=1
+    ).execute(workspace, make_fingerprint(), "legacy KeyError", ["pytest"])
+
+    assert not result.ok
+    assert "distinct failure" in result.reason

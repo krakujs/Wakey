@@ -55,12 +55,18 @@ class Settings(BaseModel):
     llm_base_url: str = ""  # Anthropic-compatible endpoint; empty = no live tier
     llm_api_key: str = ""
     llm_model: str = "glm-4.5-air"
+    sandbox_image: str = ""  # operator-provisioned Docker image; empty fails closed
+    sandbox_executor_url: str = ""  # remote isolated executor (fixer sidecar); empty = local Docker
+    sandbox_executor_token: str = ""  # shared bearer token for the executor endpoint
+    connect_url: str = ""  # approved hosted endpoint; never guess an unpublished domain
+    auto_master_key: bool = False  # local opt-in: persistent owner-only key in data_dir
     github_token: str = ""  # empty → ConsoleForge development sink (R-01)
     github_repo: str = ""  # owner/name tickets are created in
     github_api_base: str = "https://api.github.com"
     allowed_repos: str = ""  # comma-separated write allowlist; empty = unrestricted
     worker_count: int = Field(default=2, ge=1, le=16)
     rca_max_per_hour: int = Field(default=30, ge=1)
+    rca_max_tokens_per_hour: int = Field(default=30_000, ge=512)
     retention_days: int = Field(default=30, ge=1)  # event/delivery retention (R-14)
     # Deny-by-default @wakey command authorization (WF-07 §3) until
     # installation-permission checks land (G-gate):
@@ -86,6 +92,10 @@ class Settings(BaseModel):
             "WAKEY_LLM_BASE_URL": "llm_base_url",
             "WAKEY_LLM_API_KEY": "llm_api_key",
             "WAKEY_LLM_MODEL": "llm_model",
+            "WAKEY_SANDBOX_IMAGE": "sandbox_image",
+            "WAKEY_SANDBOX_EXECUTOR_URL": "sandbox_executor_url",
+            "WAKEY_SANDBOX_EXECUTOR_TOKEN": "sandbox_executor_token",
+            "WAKEY_CONNECT_URL": "connect_url",
             "WAKEY_GITHUB_TOKEN": "github_token",
             "WAKEY_GITHUB_REPO": "github_repo",
             "WAKEY_GITHUB_API_BASE": "github_api_base",
@@ -98,8 +108,11 @@ class Settings(BaseModel):
             if value := env.get(env_key):
                 parsed[field_name] = Path(value) if field_name == "data_dir" else value
 
-        if env.get("WAKEY_SELF_WATCH", "").strip().lower() in {"1", "true", "yes"}:
-            parsed["self_watch"] = True
+        for key, name in (
+            ("WAKEY_SELF_WATCH", "self_watch"),
+            ("WAKEY_AUTO_MASTER_KEY", "auto_master_key"),
+        ):
+            parsed[name] = env.get(key, "").strip().lower() in {"1", "true", "yes"}
 
         # Port precedence by override order: the platform-injected PORT
         # (Cloud Run / App Runner probe it — binding anything else there
@@ -108,6 +121,7 @@ class Settings(BaseModel):
         for env_key, field_name in (
             ("WAKEY_WORKER_COUNT", "worker_count"),
             ("WAKEY_RCA_MAX_PER_HOUR", "rca_max_per_hour"),
+            ("WAKEY_RCA_MAX_TOKENS_PER_HOUR", "rca_max_tokens_per_hour"),
             ("WAKEY_RETENTION_DAYS", "retention_days"),
             ("PORT", "port"),
             ("WAKEY_PORT", "port"),
@@ -133,8 +147,7 @@ class Settings(BaseModel):
                     f"(supported: sqlite) — Postgres lands with OPS-5"
                 )
 
-        if parsed.get("github_token") and not parsed.get("github_repo"):
-            problems.append("WAKEY_GITHUB_TOKEN requires WAKEY_GITHUB_REPO (owner/name)")
+        _require_companions(parsed, problems)
 
         if problems:
             raise ConfigError(problems)
@@ -244,3 +257,14 @@ def load_wakey_yaml(text: str) -> WakeyYaml:
     if problems:
         raise ConfigError(problems)
     return WakeyYaml(services=compiled)
+
+
+def _require_companions(parsed: dict[str, Any], problems: list[str]) -> None:
+    """Field pairs where one without the other is a configuration error."""
+    if parsed.get("github_token") and not parsed.get("github_repo"):
+        problems.append("WAKEY_GITHUB_TOKEN requires WAKEY_GITHUB_REPO (owner/name)")
+    if parsed.get("sandbox_executor_url") and not parsed.get("sandbox_executor_token"):
+        problems.append(
+            "WAKEY_SANDBOX_EXECUTOR_URL requires WAKEY_SANDBOX_EXECUTOR_TOKEN "
+            "(the executor endpoint must not be called unauthenticated)"
+        )

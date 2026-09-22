@@ -11,8 +11,7 @@ leaves an audit line. The bot's own comments are ignored (loop
 prevention, hard rule).
 
 P1 dispatch scope: ``drop``/``reopen`` (lifecycle), ``explain`` (RCA
-re-run), ``status`` (state report), ``fix``/``retry`` (named refusals —
-on-host workspaces and the PR feedback loop are E7-T1/E8-T8).
+re-run), ``status`` (state report), and bounded ``fix``/``retry`` execution.
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ from wakey.core.storage import Storage
 from wakey.forge.port import ForgePort, TicketRef
 
 COMMAND_PATTERN = re.compile(r"(?:^|\s)@wakey\s+(\w+)\s*(.*)$", re.IGNORECASE | re.MULTILINE)
-KNOWN_COMMANDS = ("fix", "explain", "retry", "drop", "reopen", "status")
+KNOWN_COMMANDS = ("fix", "explain", "retry", "digest", "approve", "drop", "reopen", "status")
 UNAUTHORIZED_REPLY = (
     "Only repo collaborators can direct wakey. "
     "Ask an admin to add your login to `WAKEY_AUTHORIZED_USERS`."
@@ -88,12 +87,18 @@ class CommandDispatcher:
         clock: Callable[[], datetime] = utcnow,
         bot_logins: frozenset[str] = frozenset({"wakey[bot]", "wakey-bot"}),
         fix_executor: Callable[[Fingerprint], FixExecutionOutcome] | None = None,
+        retry_executor: Callable[[Fingerprint, str], FixExecutionOutcome] | None = None,
+        digest_builder: Callable[[Fingerprint], str] | None = None,
+        digest_approver: Callable[[str, str], FixExecutionOutcome] | None = None,
     ) -> None:
         self._storage = storage
         self._forge = forge
         self._rca = rca
         self._authorized = authorized_users
         self._fix_executor = fix_executor
+        self._retry_executor = retry_executor
+        self._digest_builder = digest_builder
+        self._digest_approver = digest_approver
         self._metrics = metrics if metrics is not None else MetricsRegistry()
         self._clock = clock
         self._bot_logins = bot_logins
@@ -102,7 +107,9 @@ class CommandDispatcher:
         """Route one comment; replies are posted by the caller via the forge."""
         return self._route(login, issue_id, body)
 
-    def _route(self, login: str, issue_id: str, body: str) -> str | None:
+    def _route(  # noqa: PLR0911 — explicit authorization and silence outcomes
+        self, login: str, issue_id: str, body: str
+    ) -> str | None:
         if login in self._bot_logins:
             return None  # loop prevention: never react to our own comments
         command = parse_command(body)
@@ -114,6 +121,12 @@ class CommandDispatcher:
         )
         fingerprint = self._storage.get_fingerprint_by_issue(issue_id)
         if fingerprint is None:
+            if command.name == "approve" and login in self._authorized:
+                if self._digest_approver is None:
+                    return "Digest approval is not available on this instance."
+                outcome = self._digest_approver(issue_id, command.argument)
+                self._audit(login, command, f"digest:{issue_id}", f"approve-{outcome.stage}")
+                return outcome.message
             return None  # not a wakey ticket — stay quiet on foreign issues
 
         if login not in self._authorized:
@@ -137,6 +150,8 @@ class CommandDispatcher:
             "status": self._cmd_status,
             "fix": self._cmd_fix,
             "retry": self._cmd_retry,
+            "digest": self._cmd_digest,
+            "approve": self._cmd_approve,
         }
         handler = handlers.get(command.name)
         if handler is None:
@@ -202,10 +217,24 @@ class CommandDispatcher:
     def _cmd_retry(
         self, fingerprint: Fingerprint, command: WakeyCommand, login: str
     ) -> tuple[str, str]:
+        if self._retry_executor is None:
+            return "Fix retry is not available on this instance.", "retry-refused"
+        outcome = self._retry_executor(fingerprint, command.argument)
+        return outcome.message, f"retry-{outcome.stage}"
+
+    def _cmd_digest(
+        self, fingerprint: Fingerprint, command: WakeyCommand, login: str
+    ) -> tuple[str, str]:
+        if self._digest_builder is None:
+            return "Digest mode is not available on this instance.", "digest-refused"
+        return self._digest_builder(fingerprint), "digest"
+
+    def _cmd_approve(
+        self, fingerprint: Fingerprint, command: WakeyCommand, login: str
+    ) -> tuple[str, str]:
         return (
-            "The PR review-feedback loop is not available yet (E8-T8). "
-            "Push an update to the fix branch instead.",
-            "retry-refused",
+            "Approval belongs on the daily Wakey digest issue, with a fingerprint argument.",
+            "approve-refused",
         )
 
     # --- helpers ------------------------------------------------------------------

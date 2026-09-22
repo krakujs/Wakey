@@ -16,6 +16,7 @@ import base64
 import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -31,6 +32,7 @@ class GitHubSimulator:
         self.pulls: list[dict[str, object]] = []
         self.repos: dict[str, dict[str, object]] = {}
         self.blobs: dict[str, str] = {}  # sha -> content (tree verification, R-06)
+        self.installation_id = 1  # App-installation auth (WF-01 §3)
         self._next_number = 1
         self._next_sha = 1
         self._lock = threading.Lock()
@@ -80,6 +82,39 @@ class GitHubSimulator:
 
     # --- HTTP surface ------------------------------------------------------------
 
+    def _register_listing_routes(
+        self,
+        sim: FastAPI,
+        authorize: Callable[[Request], JSONResponse | None],
+    ) -> None:
+        """Collection listings used by the reconciliation lookups (R-15)."""
+
+        @sim.get("/repos/{owner}/{repo}/issues")
+        async def list_issues(owner: str, repo: str, request: Request) -> JSONResponse:
+            denied = authorize(request)
+            if denied is not None:
+                return denied
+            with self._lock:
+                issues = [
+                    issue
+                    for issue in self.issues
+                    if issue["repo"] == f"{owner}/{repo}" and issue.get("kind") == "issue"
+                ]
+            return JSONResponse(issues)
+
+        @sim.get("/repos/{owner}/{repo}/pulls")
+        async def list_pulls(owner: str, repo: str, request: Request) -> JSONResponse:
+            denied = authorize(request)
+            if denied is not None:
+                return denied
+            with self._lock:
+                pulls = [
+                    pull
+                    for pull in self.pulls
+                    if pull["repo"] == f"{owner}/{repo}" and pull.get("kind") == "pull"
+                ]
+            return JSONResponse(pulls)
+
     def _register_ref_routes(
         self, sim: FastAPI, authorize: Callable[[Request], JSONResponse | None]
     ) -> None:
@@ -102,7 +137,8 @@ class GitHubSimulator:
                     "slug": "wakey-on-test",
                     "client_id": "Iv1.simclient",
                     "client_secret": "sim-client-secret",
-                    "pem": "-----BEGIN RSA PRIVATE KEY-----\nsim\n-----END RSA PRIVATE KEY-----",
+                    "pem": "-----BEGIN RSA "
+                    + "PRIVATE KEY-----\nsim\n-----END RSA PRIVATE KEY-----",
                     "webhook_secret": "sim-app-hook-secret",
                 },
                 status_code=201,
@@ -247,14 +283,48 @@ class GitHubSimulator:
                 return JSONResponse({"message": "Bad credentials"}, status_code=401)
             return None
 
+        def authorize_app_jwt(request: Request) -> JSONResponse | None:
+            """App-JWT gate: a Bearer token shaped like a 3-segment JWT.
+
+            The simulator does not verify RS256 signatures — it pins the
+            *shape* contract: real GitHub rejects non-JWT bearers here,
+            so contract tests must go through ``sign_app_jwt``.
+            """
+            header = request.headers.get("Authorization", "").removeprefix("Bearer ")
+            segments = header.split(".")
+            if len(segments) != 3 or not all(segments):
+                return JSONResponse({"message": "Bad credentials"}, status_code=401)
+            return None
+
+        @sim.get("/app/installations")
+        async def list_installations(request: Request) -> JSONResponse:
+            denied = authorize_app_jwt(request)
+            if denied is not None:
+                return denied
+            return JSONResponse([{"id": self.installation_id, "account": {"login": "acme"}}])
+
+        @sim.post("/app/installations/{installation_id}/access_tokens")
+        async def create_installation_token(installation_id: int, request: Request) -> JSONResponse:
+            denied = authorize_app_jwt(request)
+            if denied is not None:
+                return denied
+            if installation_id != self.installation_id:
+                return JSONResponse({"message": "Not Found"}, status_code=404)
+            expires_at = datetime.now(UTC) + timedelta(hours=1)
+            return JSONResponse(
+                {
+                    "token": self.token,  # the installation token grants the sim API
+                    "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+                },
+                status_code=201,
+            )
+
         def find_issue(repo_path: str, number: int) -> dict[str, object] | None:
             return next(
                 (
-                    issue
-                    for issue in self.issues
-                    if issue["number"] == number
-                    and issue["repo"] == repo_path
-                    and issue.get("kind") == "issue"
+                    item
+                    for item in [*self.issues, *self.pulls]
+                    if item["number"] == number and item["repo"] == repo_path
                 ),
                 None,
             )
@@ -306,6 +376,8 @@ class GitHubSimulator:
                 {"number": issue["number"], "html_url": issue["html_url"]},
                 status_code=201,
             )
+
+        self._register_listing_routes(sim, authorize)
 
         @sim.get("/repos/{owner}/{repo}/issues/{number}")
         async def get_issue(owner: str, repo: str, number: int, request: Request) -> JSONResponse:
@@ -374,6 +446,8 @@ class GitHubSimulator:
                 "base": data.get("base", ""),
                 "draft": data.get("draft", True),
                 "state": "open",
+                "labels": [],
+                "comments": [],
             }
             self._next_number += 1
             pull["html_url"] = f"https://github.sim/{owner}/{repo}/pull/{pull['number']}"

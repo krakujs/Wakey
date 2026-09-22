@@ -14,7 +14,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import httpx  # noqa: E402
 
 from wakey.core.models import Fingerprint, Severity  # noqa: E402
 from wakey.forge.github import GitHubAdapter, GitHubConfig  # noqa: E402
@@ -52,7 +51,9 @@ def main() -> int:
     )
     print(f"created issue #{ref.issue_id}: {ref.url}")
 
-    adapter.add_comment(ref, "M0 gate rehearsal comment — wakey never merges; this issue is safe to delete.")
+    adapter.add_comment(
+        ref, "M0 gate rehearsal comment — wakey never merges; this issue is safe to delete."
+    )
     print("comment added")
     print(f"LIVE GITHUB CHECK PASS on {ALLOWED_REPO}")
     return 0

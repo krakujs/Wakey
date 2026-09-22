@@ -87,6 +87,11 @@ def test_wizard_page_renders_and_shows_key_once(client) -> None:
     body = response.text
     assert "never shown again" in body
     assert "wk_" in body
+    assert "curl --fail-with-body" in body
+    assert "http://localhost:8477/ingest/wk_" in body
+    assert body.count("Wakey setup test: synthetic connection failure") == 3
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
     assert "wk_" not in c.get("/setup").text, "key must not persist on subsequent pages"
 
 

@@ -36,10 +36,13 @@ from wakey.forge.github_app import (
 from wakey.security.secretbox import SecretBox
 
 _SECRET_SLUG = "gh_app:slug"
-_SECRET_CLIENT_ID = "gh_app:client_id"
+SECRET_CLIENT_ID_SLUG = "gh_app:client_id"
+_SECRET_CLIENT_ID = SECRET_CLIENT_ID_SLUG
 _SECRET_CLIENT_SECRET = "gh_app:client_secret"
-_SECRET_PRIVATE_KEY = "gh_app:private_key"
-_SECRET_WEBHOOK = "gh_app:webhook_secret"
+SECRET_PRIVATE_KEY_SLUG = "gh_app:private_key"
+_SECRET_PRIVATE_KEY = SECRET_PRIVATE_KEY_SLUG
+SECRET_WEBHOOK_SLUG = "gh_app:webhook_secret"
+_SECRET_WEBHOOK = SECRET_WEBHOOK_SLUG
 
 
 class MissingSecretBox(RuntimeError):

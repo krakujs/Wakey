@@ -95,9 +95,10 @@ class ModelProposer:
             rendered.append(f"--- FILE: {path} ---\n{trimmed}")
         payload, _ = self._redactor.redact("\n\n".join(rendered))
         error_text, _ = self._redactor.redact(fingerprint.template)
+        rca_text, _ = self._redactor.redact(rca)
         parts = [
             f"Error family (seen ×{fingerprint.occurrences}): {error_text}",
-            f"RCA analysis: {rca}",
+            f"RCA analysis: {rca_text}",
             f"Repository files:\n\n{payload}",
         ]
         if task == "repro":

@@ -3,17 +3,32 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import socket
 from pathlib import Path
 
+import httpx
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
+from wakey.core.composition import build_forge
 from wakey.core.config import Settings
 from wakey.core.metrics import MetricsRegistry
+from wakey.core.models import Fingerprint, Severity
 from wakey.core.server import create_app
 from wakey.core.storage import SQLiteStorage
-from wakey.forge.github_app import build_manifest, creation_url
+from wakey.forge.github import GitHubAdapter, GitHubConfig
+from wakey.forge.github_app import (
+    AppAuthError,
+    InstallationTokenSource,
+    build_manifest,
+    creation_url,
+    sign_app_jwt,
+)
+from wakey.forge.port import ConsoleForge
 from wakey.forge.simulator import GitHubSimulator, serve_in_background
 from wakey.security.secretbox import SecretBox, new_master_key
 from wakey.web.github_setup import app_connected
@@ -104,3 +119,125 @@ def test_app_connected_detection(app_env) -> None:
     assert app_connected(storage) is False
     client.get("/setup/github/callback?code=valid-code", follow_redirects=False)
     assert app_connected(storage) is True
+
+
+# --- runtime App authentication (installation tokens, WF-01 §3) ------------------
+
+
+def test_sign_app_jwt_produces_rs256_shape() -> None:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+    jwt = sign_app_jwt(pem, "Iv1.client123", ttl_seconds=300)
+    header_b64, payload_b64, signature_b64 = jwt.split(".")
+
+    def decode(segment: str) -> dict[str, object]:
+        padded = segment + "=" * (-len(segment) % 4)
+        return json.loads(base64.urlsafe_b64decode(padded))
+
+    assert decode(header_b64) == {"alg": "RS256", "typ": "JWT"}
+    payload = decode(payload_b64)
+    assert payload["iss"] == "Iv1.client123"
+    assert payload["exp"] - payload["iat"] == 360  # drift margin + ttl
+    assert len(signature_b64) > 100  # 2048-bit RS256 signature
+
+
+def test_sign_app_jwt_rejects_garbage_pem() -> None:
+    with pytest.raises(AppAuthError, match="not valid PEM"):
+        sign_app_jwt("not a key", "Iv1.client123")
+
+
+def test_installation_token_source_mints_and_caches() -> None:
+    """Token source: mints via the App endpoints, caches until near expiry."""
+    sim = GitHubSimulator(token="sim-token")
+    port = _free_port()
+    server = serve_in_background(sim.create_app(), port)
+
+    mint_calls: list[httpx.Request] = []
+
+    def count_mints(request: httpx.Request) -> None:
+        if str(request.url).endswith("/access_tokens"):
+            mint_calls.append(request)
+
+    with httpx.Client(
+        base_url=f"http://127.0.0.1:{port}",
+        event_hooks={"request": [count_mints]},
+    ) as http:
+        source = InstallationTokenSource(
+            _generate_pem(),
+            "Iv1.client123",
+            api_base=f"http://127.0.0.1:{port}",
+            client=http,
+            clock=lambda: 0.0,
+        )
+        first = source.token()
+        second = source.token()
+    assert first == second == "sim-token"
+    assert len(mint_calls) == 1, "the cached token must be reused inside the margin"
+    server.should_exit = True
+
+
+def _generate_pem() -> str:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+
+def test_app_only_onboarding_completes_the_connection(tmp_path: Path) -> None:
+    """The review defect: App credentials stored, no PAT — forge must be live.
+
+    build_forge resolves App installation auth when a PAT is absent; with
+    no App and no PAT it stays a ConsoleForge development sink.
+    """
+    storage = SQLiteStorage(tmp_path / "wakey.db")
+    box = SecretBox(new_master_key())
+    storage.set_secret("gh_app:client_id", "Iv1.client123")
+    storage.set_secret("gh_app:private_key", box.encrypt(_generate_pem()))
+    settings = Settings(
+        data_dir=tmp_path,
+        github_repo="acme/payments",
+        github_api_base="http://127.0.0.1:1",  # never contacted at build time
+    )
+    forge = build_forge(settings, storage=storage, secret_box=box)
+    assert isinstance(forge, GitHubAdapter), "App credentials alone must build the live adapter"
+
+    # without any credentials it stays the development sink
+    assert isinstance(build_forge(Settings(data_dir=tmp_path)), ConsoleForge)
+    storage.close()
+
+
+def test_adapter_runs_end_to_end_on_app_installation_auth() -> None:
+    """Full App-only path: minted installation token authorizes the API."""
+    sim = GitHubSimulator(token="sim-token")
+    port = _free_port()
+    server = serve_in_background(sim.create_app(), port)
+    base = f"http://127.0.0.1:{port}"
+    with httpx.Client() as http:
+        source = InstallationTokenSource(
+            _generate_pem(), "Iv1.client123", api_base=base, client=http
+        )
+        adapter = GitHubAdapter(
+            GitHubConfig(token="", repo="acme/payments", api_base=base),
+            token_provider=source.token,
+        )
+        ref = adapter.create_ticket(
+            Fingerprint(
+                fp_hash="apponly000000001",
+                service="payments-api",
+                environment="prod",
+                template="ERROR: boom",
+                severity=Severity.ERROR,
+            ),
+            "[wakey] payments-api: boom",
+            "body",
+        )
+    assert sim.issues, "the installation token must authorize ticket creation"
+    assert ref.issue_id == str(sim.issues[0]["number"])
+    server.should_exit = True

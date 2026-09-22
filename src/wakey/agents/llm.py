@@ -55,4 +55,12 @@ class AnthropicCompatibleModel:
         data = response.json()
         blocks = data.get("content", [])
         text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
-        return ModelReply(text=text, data={"model": data.get("model", self._model)})
+        usage = data.get("usage", {})
+        return ModelReply(
+            text=text,
+            data={
+                "model": str(data.get("model", self._model)),
+                "input_tokens": str(usage.get("input_tokens", 0)),
+                "output_tokens": str(usage.get("output_tokens", 0)),
+            },
+        )

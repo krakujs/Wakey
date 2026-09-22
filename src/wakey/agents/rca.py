@@ -61,6 +61,7 @@ class RcaResult:
     classification: str  # code-fix | config | infra | needs-human
     confidence: float
     summary: str
+    usage: dict[str, str] = field(default_factory=dict)
 
 
 def classify(fingerprint: Fingerprint) -> RcaResult:
@@ -105,21 +106,23 @@ class ModelRca:
         self._model = model
         self._redactor = redactor
 
-    def analyze(self, fingerprint: Fingerprint) -> RcaResult | None:
+    def analyze(self, fingerprint: Fingerprint, evidence: str = "") -> RcaResult | None:
         frames = "\n".join(f"{f.path}:{f.line} in {f.function}" for f in fingerprint.frames[:5])
         raw = (
             f"Service {fingerprint.service} ({fingerprint.environment}) raised, "
             f"×{fingerprint.occurrences}:\n\n"
-            f"{fingerprint.template}\n" + (f"\nTop frames:\n{frames}" if frames else "")
+            f"{fingerprint.template}\n"
+            + (f"\nTop frames:\n{frames}" if frames else "")
+            + (f"\n\nRepository/deployment evidence:\n{evidence}" if evidence else "")
         )
         prompt, _ = self._redactor.redact(raw)  # second pass: never leak into a prompt
         reply: ModelReply = self._model.complete(self.SYSTEM, prompt)  # type: ignore[attr-defined]
         if reply.data.get("error") or not reply.text.strip():
             return None
-        return _parse_model_reply(reply.text)
+        return _parse_model_reply(reply.text, reply.data)
 
 
-def _parse_model_reply(text: str) -> RcaResult | None:
+def _parse_model_reply(text: str, usage: dict[str, str] | None = None) -> RcaResult | None:
     class_match = _CLASS_LINE.search(text)
     if class_match is None:
         return None
@@ -128,7 +131,7 @@ def _parse_model_reply(text: str) -> RcaResult | None:
     confidence = float(confidence_match.group(1)) if confidence_match else 0.5
     summary_match = re.search(r"SUMMARY:\s*(.+)", text, re.IGNORECASE | re.DOTALL)
     summary = summary_match.group(1).strip()[:600] if summary_match else text.strip()[:400]
-    return RcaResult(classification, confidence, summary)
+    return RcaResult(classification, confidence, summary, usage or {})
 
 
 @dataclass
@@ -136,15 +139,24 @@ class RcaBudget:
     """Hourly dispatch cap (SEC-7): exhausted budget leaves work queued."""
 
     max_per_hour: int = 30
+    max_tokens_per_hour: int = 30_000
     _counters: SlidingWindowCounters = field(
         default_factory=lambda: SlidingWindowCounters(window_seconds=3600), init=False
     )
+    _token_events: list[tuple[float, int]] = field(default_factory=list, init=False)
 
-    def try_take(self, now: float) -> bool:
+    def try_take(self, now: float, estimated_tokens: int = 512) -> bool:
         """Reserve one dispatch; False when the hourly cap is exhausted."""
         if self._counters.count_in_window("rca", now) >= self.max_per_hour:
             return False
+        self._token_events = [(ts, n) for ts, n in self._token_events if ts > now - 3600]
+        if (
+            sum(tokens for _, tokens in self._token_events) + estimated_tokens
+            > self.max_tokens_per_hour
+        ):
+            return False
         self._counters.record("rca", now)
+        self._token_events.append((now, estimated_tokens))
         return True
 
 
@@ -203,8 +215,9 @@ class RcaDispatcher:
     def investigate(self, fingerprint: Fingerprint) -> RcaResult:
         """Classify one fingerprint (model-refined when wired) and apply the verdict."""
         result = classify(fingerprint)
+        evidence = self._evidence(fingerprint)
         if self._model_rca is not None:
-            refined = self._model_rca.analyze(fingerprint)
+            refined = self._model_rca.analyze(fingerprint, evidence)
             if refined is not None:
                 result = refined
         if fingerprint.ticket_url is not None:
@@ -228,10 +241,54 @@ class RcaDispatcher:
                     "class": result.classification,
                     "confidence": str(result.confidence),
                     "summary": result.summary,
+                    "model": result.usage.get("model", "heuristic"),
+                    "input_tokens": result.usage.get("input_tokens", "0"),
+                    "output_tokens": result.usage.get("output_tokens", "0"),
+                    "evidence": "repository+deploy" if evidence else "fingerprint-only",
                 },
             )
         )
         return result
+
+    def _evidence(self, fingerprint: Fingerprint) -> str:
+        """Bounded repository snippets and deploy diff for an RCA prompt."""
+        chunks: list[str] = []
+        service = self._storage.get_service(fingerprint.service)
+        if service is not None:
+            chunks.append(f"Repository: {service.repo}; service path: {service.path}")
+        seen: set[str] = set()
+        for frame in fingerprint.frames[:5]:
+            path = frame.path.lstrip("/")
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            try:
+                content = self._forge.fetch_file(path)
+            except Exception:  # noqa: BLE001 — evidence outage degrades, never aborts RCA
+                logger.warning("RCA repository evidence unavailable for %s", path)
+                continue
+            if content is not None:
+                chunks.append(f"FILE {path} (DATA):\n{content[:4000]}")
+        deploys = [
+            item
+            for item in self._storage.list_recent_deploys(fingerprint.service, limit=10)
+            if item.environment == fingerprint.environment
+        ]
+        if deploys:
+            chunks.append(
+                "Recent deploys newest-first: "
+                + ", ".join(f"{item.sha}@{item.deployed_at.isoformat()}" for item in deploys[:3])
+            )
+        if len(deploys) >= 2:
+            head, base = deploys[0].sha, deploys[1].sha
+            try:
+                diff = self._forge.compare_commits(base, head)
+            except Exception:  # noqa: BLE001 — same graceful evidence degradation
+                logger.warning("RCA deploy diff unavailable for %s...%s", base, head)
+            else:
+                if diff:
+                    chunks.append(f"DEPLOY DIFF {base}...{head} (DATA):\n{diff[:12000]}")
+        return "\n\n".join(chunks)[:20000]
 
     @staticmethod
     def _comment(result: RcaResult) -> str:

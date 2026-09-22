@@ -30,6 +30,7 @@ from wakey.core.models import (
     Severity,
     WorkState,
 )
+from wakey.fingerprints.engine import fingerprint_from_event
 from wakey.storage.postgres import PostgresStorage, _fingerprint_params
 
 DSN = os.environ.get("WAKEYPG_TEST_DSN", "postgresql://postgres:wakey@127.0.0.1:55432/wakey")
@@ -50,7 +51,10 @@ def _pg_up(timeout_s: float = 30.0) -> bool:
         return True
 
 
-pytestmark = pytest.mark.skipif(not _pg_up(), reason="Postgres not reachable")
+PG_AVAILABLE = _pg_up()
+if not PG_AVAILABLE and os.environ.get("WAKEYPG_REQUIRE_TESTS") == "1":
+    raise RuntimeError("Postgres is required in CI; refusing to silently skip storage tests")
+pytestmark = pytest.mark.skipif(not PG_AVAILABLE, reason="Postgres not reachable")
 
 
 @pytest.fixture()
@@ -80,6 +84,52 @@ def make_fp(state: WorkState = WorkState.AWAITING_HUMAN) -> Fingerprint:
         ticket_issue_id="7",
         ticket_url="https://github.example/acme/repo/issues/7",
     )
+
+
+def test_atomic_specific_delivery_claim(storage):
+    storage.save_delivery(Delivery(service="__webhook__", delivery_id="retry", payload="{}"))
+    assert storage.claim_delivery("__webhook__", "retry") is not None
+    assert storage.claim_delivery("__webhook__", "retry") is None
+    storage.fail_delivery("__webhook__", "retry", max_attempts=5)
+    assert storage.claim_delivery("__webhook__", "retry") is not None
+    storage.complete_delivery("__webhook__", "retry")
+    assert storage.claim_delivery("__webhook__", "retry") is None
+
+
+def test_exact_fingerprint_count_and_legacy_unknown(storage):
+    now = datetime.now(UTC)
+    event = LogEvent(
+        id="pg-exact",
+        ts=now,
+        service="pg-svc",
+        environment="prod",
+        severity=Severity.ERROR,
+        message="TypeError: boom",
+        source="test",
+    )
+    fp = fingerprint_from_event(event)
+    storage.claim_event(event, fp)
+    storage.claim_event(event, fp)
+    start, end = now - timedelta(seconds=1), now + timedelta(seconds=1)
+    assert storage.count_fingerprint_events(fp, start, end) == 1
+    other = fp.model_copy(update={"fp_hash": "unrelated"})
+    assert storage.count_fingerprint_events(other, start, end) == 0
+    storage.save_log_event(event.model_copy(update={"id": "legacy-unbound"}))
+    assert storage.count_fingerprint_events(fp, start, end) is None
+
+
+def test_restart_releases_ticketless_reservation(storage):
+    fp = make_fp().model_copy(
+        update={
+            "state": WorkState.QUEUED_RCA,
+            "ticket_issue_id": None,
+            "ticket_url": None,
+            "reserved_at": datetime.now(UTC),
+        }
+    )
+    storage.save_fingerprint(fp)
+    storage.recover_stale_deliveries()
+    assert storage.get_fingerprint(fp.fp_hash).state is WorkState.NEW
 
 
 def test_round_trip_and_duplicate_rejection(storage) -> None:
@@ -266,4 +316,15 @@ def test_additional_coverage_paths(storage) -> None:
 def test_fingerprint_params_round_trip(storage) -> None:
     fp = make_fp()
     params = _fingerprint_params(fp)
-    assert len(params) == 20 and params[0] == fp.fp_hash
+    assert len(params) == 22 and params[0] == fp.fp_hash
+    # new columns (schema v2): ticket-creation intent + fix-commit binding
+    assert params[-2] is None and params[-1] is None
+    stamped = fp.model_copy(
+        update={
+            "reserved_at": datetime(2026, 9, 17, tzinfo=UTC),
+            "fix_commit_sha": "abc123def456",
+        }
+    )
+    stamped_params = _fingerprint_params(stamped)
+    assert stamped_params[-2] == "2026-09-17T00:00:00+00:00"
+    assert stamped_params[-1] == "abc123def456"

@@ -93,6 +93,8 @@ def render_board_html(fingerprints: list[Any], generated_at: str) -> str:
 </head>
 <body>
 <main>
+<nav><a href="/connect">Connect GitHub</a> ·
+<a href="/setup">Services &amp; log setup</a> · <a href="/settings">Settings</a></nav>
 <h1>wakey board — {len(fingerprints)} active</h1>
 <p class="meta">generated at {escape(generated_at)} · refresh to update</p>
 <div class="card">

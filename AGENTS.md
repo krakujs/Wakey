@@ -11,18 +11,25 @@ copy-paste runnable.
 
 - Never disable the suggest-don't-merge invariant. There is no merge code
   path; do not add one.
-- All state is local to the host running wakeyd (SQLite default, Postgres
-  optional). Do not exfiltrate logs or credentials.
+- Incident state stays on wakeyd (SQLite default, Postgres optional). Opt-in
+  Wakey Connect stores connection metadata and redacted GitHub webhook queues
+  on its hosted service; production logs are never sent there. BYO-App remains
+  independent. Never expose the shared App private key to deployments.
 - Mutating endpoints require an admin session cookie — obtain it via the
   setup token, never by bypassing auth.
 
 ## Install and run (development sink)
 
+For a containerized install after cloning, run `sh start.sh`. It checks Docker,
+waits for health and issues a fresh one-use login token without editing `.env`
+or deleting data. Shared-App use still requires the published Connect endpoint;
+see `docs/recipes/wakey-connect.md` for operator launch prerequisites.
+
 ```bash
 git clone https://github.com/krakujs/Wakey && cd Wakey
 make install                 # venv + wakey + dev tools
 make check                   # gates: format, lint, mypy strict, SPDX, 300+ tests
-make serve                   # or: wakey serve   → 127.0.0.1:8477
+make serve                   # uses .venv; persistent local encryption key
 ```
 
 The console prints `first-run setup token (single use, 30 min): WAKE-…`.

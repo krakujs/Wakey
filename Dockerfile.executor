@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Isolated executor image. The Docker client talks only to the restricted
+# socket proxy from deploy/compose.fixer.yml; no daemon runs in this image.
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends docker-cli \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir ".[secrets,postgres]" \
+    && groupadd --system wakey \
+    && useradd --system --gid wakey wakey
+
+USER wakey
+
+ENV WAKEY_PORT=8490
+EXPOSE 8490
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8490/healthz', timeout=4)"]
+
+CMD ["wakey-executor", "--host", "0.0.0.0", "--port", "8490"]

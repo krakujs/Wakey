@@ -255,3 +255,11 @@
 2. **Language priority for tracebacks**: I assumed Python/Java/JS/PHP for P1 — swap in your legacy estate's real mix (e.g. Ruby/Go earlier?).
 3. **Digest mode in P1 or P2?** I placed it in P1 (cheap, big trust win) — confirm.
 4. **Local-LLM in P1**: first-class from day one, or follow right after? Affects SEC-3/RCA-7 sequencing.
+# Approved onboarding extension — 2026-09-17
+
+ONB-3 now defaults to the Wakey-owned GitHub App via an optional hosted Connect
+service, approved by the founder. BYO-App remains available for independent
+hosting. The service handles verified deployment pairing, repository-scoped
+installation credentials and outbound webhook relay; it never receives
+production logs. Initial delivery is single-repository per deployment;
+multi-repository runtime routing remains an explicit follow-up. See WF-01.

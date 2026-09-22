@@ -15,7 +15,7 @@ Humans direct the loop from GitHub only: comments on tickets/PRs. This workflow 
 
 ## Steps
 
-1. **Receive & verify**: webhook HMAC check (reject 401 otherwise); dedup by delivery id (WF-02 semantics). Bot's own comments are ignored (loop prevention, hard rule). *Implemented 2026-09-16:* `POST /webhooks/github` — fail-closed without `WAKEY_WEBHOOK_SECRET`, HMAC per delivery, dedup via the durable delivery store; typed parsing + dispatch in `wakey/web/commands.py` (drop/reopen/explain/status live; fix/retry reply with named refusals until E7-T1/E8-T8 land). Authorization is deny-by-default via `WAKEY_AUTHORIZED_USERS` until installation-permission checks land (G-gate); refusals follow this spec's wording.
+1. **Receive & verify**: webhook HMAC check (reject 401 otherwise); dedup by delivery id (WF-02 semantics). Bot's own comments are ignored (loop prevention, hard rule). *Implemented:* `POST /webhooks/github` is fail-closed without `WAKEY_WEBHOOK_SECRET`, HMAC-verifies and durably deduplicates each delivery, then dispatches typed commands. `fix` and `retry <feedback>` use the shared executor; retry updates the same draft branch and refuses a third automated retry. Authorization is deny-by-default via `WAKEY_AUTHORIZED_USERS` until installation-permission checks land (G-gate); refusals follow this spec's wording.
 2. **Parse commands** (`RCA-5`): `@wakey fix`, `@wakey explain <target>`, `@wakey retry [feedback]`, `@wakey drop`, `@wakey reopen`, `@wakey status`, (P2) `@wakey suppress <duration> <reason>`. Unknown command → helpful reply listing commands (once per thread to avoid noise). Non-commands ignored.
 3. **Authorize**: responder must have write access to the repo in the installation; else reply "only repo collaborators can direct wakey" + security metric. Every command → audit line (user, command, target).
 4. **Dispatch**:
@@ -35,6 +35,20 @@ Humans direct the loop from GitHub only: comments on tickets/PRs. This workflow 
 
 ## State written
 
+Implementation note (2026-09-17): GitHub deliveries persist a redacted event
+envelope and are marked complete **after** handler success. Failures requeue up
+to five attempts and survive application restart without sender redelivery.
+HTTP handling dispatches blocking work off the event loop. Partial external
+effects can still replay; a command/reply outbox is needed to meet the full
+exactly-once interaction contract. Authenticated dashboard fix requests and
+authorized GitHub fix commands now use the same executor with explicit human
+intent. Authorized retry feedback is treated as untrusted data, redacted before
+the model prompt, tested against the exact current proposal tip, and committed
+to the same proposal branch. Digest mode creates one audited issue per repository
+and UTC day. Because GitHub does not emit a checkmark-reaction webhook suitable
+for selecting a line item, an authorized `@wakey approve <fingerprint>` comment
+on that digest releases exactly one candidate; unauthorized comments are silent.
+
 `commands` (log incl. authorization result), digest issues, suppression entries (via `drop`), config-derived autonomy state, `audit`.
 
 ## Failure modes
@@ -46,7 +60,7 @@ Humans direct the loop from GitHub only: comments on tickets/PRs. This workflow 
 | Command on a non-wakey issue | Ignore silently (metric only) — wakey doesn't talk on issues it doesn't own |
 | GitHub API down when replying | Command executed anyway where safe (dispatch first, reply queued); replies retried |
 | Two conflicting commands concurrently (`fix` + `drop`) | Deterministic order (event timestamps); drop wins if later; both audited |
-| Digest reaction by unauthorized user | Ignored + metric (step 3 rules apply to reactions) |
+| Digest approval by unauthorized user | Ignored (step 3 rules apply) |
 | `retry` loop abuse | Hard cap (2 auto-retries) + per-user command rate cap (default 10/hour) |
 
 ## Acceptance criteria
@@ -55,6 +69,6 @@ Humans direct the loop from GitHub only: comments on tickets/PRs. This workflow 
 2. Bot's own comments never trigger commands (unit w/ loop fixture).
 3. Unauthorized commenter → refusal reply + audit + metric (unit).
 4. Every command type has an e2e test with fake GitHub asserting the downstream dispatch (fix→WF-06 attempt; drop→suppression+close; etc.).
-5. Digest: exactly one open digest issue per repo/day; ✅ releases exactly the marked candidates (e2e).
+5. Digest: exactly one issue per repo/day; authorized approval releases exactly the named candidate (e2e).
 6. Autonomy enforcement: `observe` → zero agent dispatches under storm; `triage` → RCA but zero fix attempts unless `@wakey fix` (e2e, fake-LLM counters).
 7. Retry cap: 3rd retry request → refusal reply (unit).

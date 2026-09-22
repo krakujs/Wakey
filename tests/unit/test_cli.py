@@ -99,6 +99,11 @@ def test_setup_token_prints_single_use_token(
     assert cli.main(["setup-token", "--force"]) == 0
     token = capsys.readouterr().out.strip()
     assert token.startswith("WAKE-")
+    assert cli.main(["setup-token"]) == 1
+    assert "--force" in capsys.readouterr().out
+    assert cli.main(["setup-token", "--force"]) == 0
+    replacement = capsys.readouterr().out.strip()
+    assert replacement.startswith("WAKE-") and replacement != token
 
 
 def test_load_dotenv_sets_missing_keys_and_skips_existing(

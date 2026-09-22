@@ -50,6 +50,14 @@ def test_platform_port_env_used_when_wakey_port_absent() -> None:
     assert Settings.from_env({}).port == 8477
 
 
+def test_sandbox_image_environment_binding():
+    assert (
+        Settings.from_env({"WAKEY_SANDBOX_IMAGE": "trusted@sha256:123"}).sandbox_image
+        == "trusted@sha256:123"
+    )
+    assert Settings.from_env({}).sandbox_image == ""
+
+
 def test_settings_rejects_bad_platform_port() -> None:
     with pytest.raises(ConfigError) as excinfo:
         Settings.from_env({"PORT": "http"})

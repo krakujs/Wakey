@@ -8,7 +8,6 @@ appear on a wakey ticket.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -46,7 +45,9 @@ def main() -> int:
         model=env.get("WAKEY_LLM_MODEL", "glm-4.5-air"),
         max_tokens=1024,
     )
-    reply = model.complete(SYSTEM, f"Analyze this production error and fill the template:\n\n{ERROR}")
+    reply = model.complete(
+        SYSTEM, f"Analyze this production error and fill the template:\n\n{ERROR}"
+    )
     if reply.data.get("error"):
         print(f"LLM error: {reply.data['error']}")
         return 1

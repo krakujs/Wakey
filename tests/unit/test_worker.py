@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 
 from wakey.core.metrics import MetricsRegistry
@@ -100,4 +101,32 @@ def test_pool_start_stop_is_idempotent(tmp_path: Path) -> None:
         assert pool._tasks == []
 
     asyncio.run(lifecycle())
+    storage.close()
+
+
+def test_pool_shutdown_waits_for_inflight_delivery(tmp_path):
+    storage = SQLiteStorage(tmp_path / "wakey.db")
+    worker = make_worker(storage)
+    entered, released = threading.Event(), threading.Event()
+
+    def handler(delivery):
+        entered.set()
+        assert released.wait(timeout=3)
+
+    worker.register_handler("__test__", handler)
+    storage.save_delivery(Delivery(service="__test__", delivery_id="drain", payload="{}"))
+    pool = DeliveryWorkerPool(worker, count=1)
+
+    async def lifecycle():
+        await pool.start()
+        assert await asyncio.to_thread(entered.wait, 3)
+        stop = asyncio.create_task(pool.stop())
+        await asyncio.sleep(0.01)
+        assert not stop.done()
+        released.set()
+        await stop
+
+    asyncio.run(lifecycle())
+    assert storage.claim_delivery("__test__", "drain") is None
+    assert storage.pending_delivery_count() == 0
     storage.close()

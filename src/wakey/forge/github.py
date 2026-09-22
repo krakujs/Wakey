@@ -10,24 +10,29 @@ Errors are typed so the pipeline can distinguish "misconfigured" from
 from __future__ import annotations
 
 import base64
+import re
 import time
+from collections.abc import Callable
 
 import httpx
 
 from wakey.core.models import Fingerprint
-from wakey.forge.port import TicketRef
+from wakey.forge.port import (
+    ForgeAuthError,
+    ForgeError,
+    ForgeRateLimited,
+    ForgeUnreachable,
+    TicketRef,
+)
 
-
-class ForgeError(Exception):
-    """Base for GitHub API failures after bounded retries."""
-
-
-class ForgeAuthError(ForgeError):
-    """Token rejected or permission narrowed (401/403 non-rate)."""
-
-
-class ForgeRateLimited(ForgeError):
-    """Primary or secondary rate limit hit; backoff was exhausted."""
+__all__ = [
+    "ForgeAuthError",
+    "ForgeError",
+    "ForgeRateLimited",
+    "ForgeUnreachable",
+    "GitHubAdapter",
+    "GitHubConfig",
+]
 
 
 class GitHubConfig:
@@ -52,11 +57,22 @@ class GitHubConfig:
 
 
 class GitHubAdapter:
-    """Minimal ForgePort implementation against the GitHub REST API."""
+    """Minimal ForgePort implementation against the GitHub REST API.
 
-    def __init__(self, config: GitHubConfig, client: httpx.Client | None = None) -> None:
+    Auth is a static token (PAT) or, for GitHub App installations, a
+    ``token_provider`` callable that supplies a fresh installation token
+    per request — the provider wins when both are set.
+    """
+
+    def __init__(
+        self,
+        config: GitHubConfig,
+        client: httpx.Client | None = None,
+        token_provider: Callable[[], str] | None = None,
+    ) -> None:
         self._config = config
         self._token = config.token
+        self._token_provider = token_provider
         self._repo = config.repo
         self._api_base = config.api_base.rstrip("/")
         self._client = client or httpx.Client(timeout=15)
@@ -70,24 +86,33 @@ class GitHubAdapter:
         accept: str = "application/vnd.github+json",
     ) -> httpx.Response:
         url = f"{self._api_base}{path}"
+        token = self._token_provider() if self._token_provider is not None else self._token
         headers = {
-            "Authorization": f"Bearer {self._token}",
+            "Authorization": f"Bearer {token}",
             "Accept": accept,
             "X-GitHub-Api-Version": "2022-11-28",
         }
         for attempt in range(self._max_retries + 1):
-            response = self._client.request(method, url, json=json_body, headers=headers)
+            try:
+                response = self._client.request(method, url, json=json_body, headers=headers)
+            except httpx.HTTPError as exc:
+                raise ForgeUnreachable(
+                    f"github {method} {path} unreachable (write may have landed): {exc}"
+                ) from exc
             if response.status_code == 401:
-                raise ForgeAuthError("github token rejected (401)")
+                raise ForgeAuthError("github token rejected (401)", status_code=401)
             if response.status_code == 403 and response.headers.get("X-RateLimit-Remaining") == "0":
-                raise ForgeRateLimited("github primary rate limit exhausted")
+                raise ForgeRateLimited("github primary rate limit exhausted", status_code=403)
             if response.status_code >= 500 and attempt < self._max_retries:
                 time.sleep(0.5 * (attempt + 1))  # bounded backoff
                 continue
             if response.is_error:
-                raise ForgeError(f"github {method} {path} -> {response.status_code}")
+                raise ForgeError(
+                    f"github {method} {path} -> {response.status_code}",
+                    status_code=response.status_code,
+                )
             return response
-        raise ForgeError(f"github {method} {path} failed after retries")
+        raise ForgeError(f"github {method} {path} failed after retries", status_code=599)
 
     def create_ticket(self, fingerprint: Fingerprint, title: str, body: str) -> TicketRef:
         response = self._request(
@@ -98,13 +123,42 @@ class GitHubAdapter:
         data = response.json()
         return TicketRef(issue_id=str(data["number"]), url=data["html_url"])
 
+    def find_ticket_by_marker(self, marker: str) -> TicketRef | None:
+        """Open wakey-labeled issue carrying ``marker`` in its body (R-15).
+
+        Bounded scan (3 pages): reconciliation runs only on the ambiguous
+        failure path, and wakey labels every ticket it creates.
+        """
+        for page in (1, 2, 3):
+            response = self._request(
+                "GET",
+                f"/repos/{self._repo}/issues?state=open&labels=wakey&per_page=100&page={page}",
+                None,
+            )
+            issues = response.json()
+            for issue in issues:
+                if "pull_request" in issue:  # GitHub lists PRs here too
+                    continue
+                if marker in str(issue.get("body", "")):
+                    return TicketRef(issue_id=str(issue["number"]), url=str(issue["html_url"]))
+            if len(issues) < 100:
+                break
+        return None
+
     def add_comment(self, ticket: TicketRef, body: str) -> None:
         self._request(
             "POST", f"/repos/{self._repo}/issues/{ticket.issue_id}/comments", {"body": body}
         )
 
     def open_draft_proposal(self, branch: str, title: str, body: str, base: str) -> TicketRef:
-        """Draft PR from a published branch (E8-T5/R-06); never merged by Wakey."""
+        """Draft PR from a published branch (E8-T5/R-06); never merged by Wakey.
+
+        Idempotent per head branch (R-15): a delivery retried after a lost
+        response binds to the already-open draft instead of opening a twin.
+        """
+        existing = self._find_open_pull_by_head(branch)
+        if existing is not None:
+            return existing
         response = self._request(
             "POST",
             f"/repos/{self._repo}/pulls",
@@ -113,6 +167,21 @@ class GitHubAdapter:
         data = response.json()
         return TicketRef(issue_id=str(data["number"]), url=data["html_url"])
 
+    def _find_open_pull_by_head(self, branch: str) -> TicketRef | None:
+        for page in (1, 2, 3):
+            response = self._request(
+                "GET", f"/repos/{self._repo}/pulls?state=open&per_page=100&page={page}", None
+            )
+            pulls = response.json()
+            for pull in pulls:
+                head = pull.get("head")
+                ref = head.get("ref", "") if isinstance(head, dict) else str(head or "")
+                if ref == branch:
+                    return TicketRef(issue_id=str(pull["number"]), url=str(pull["html_url"]))
+            if len(pulls) < 100:
+                break
+        return None
+
     # --- branch publication (R-06) -------------------------------------------
 
     def default_branch(self) -> str:
@@ -120,13 +189,22 @@ class GitHubAdapter:
         return str(response.json()["default_branch"])
 
     def create_branch(self, branch: str, base: str) -> None:
-        ref = self._request("GET", f"/repos/{self._repo}/git/ref/heads/{base}", None).json()
-        base_sha = ref["object"]["sha"]
-        self._request(
-            "POST",
-            f"/repos/{self._repo}/git/refs",
-            {"ref": f"refs/heads/{branch}", "sha": base_sha},
-        )
+        if re.fullmatch(r"[0-9a-fA-F]{40,64}", base):
+            base_sha = base
+        else:
+            ref = self._request("GET", f"/repos/{self._repo}/git/ref/heads/{base}", None).json()
+            base_sha = ref["object"]["sha"]
+        try:
+            self._request(
+                "POST",
+                f"/repos/{self._repo}/git/refs",
+                {"ref": f"refs/heads/{branch}", "sha": base_sha},
+            )
+        except ForgeError as exc:
+            # already exists = our own earlier attempt (crash/retry after the
+            # ref landed): resuming that branch is the idempotent outcome (R-15)
+            if "422" not in str(exc):
+                raise
 
     def commit_files(self, branch: str, message: str, files: dict[str, str]) -> str:
         """Publish full file contents as one commit on ``branch``.
@@ -185,6 +263,21 @@ class GitHubAdapter:
         if encoding == "base64":
             return base64.b64decode(content).decode("utf-8")
         return str(content)
+
+    def compare_commits(self, base: str, head: str) -> str | None:
+        """Fetch a bounded unified diff between two deployment SHAs."""
+        try:
+            response = self._request(
+                "GET",
+                f"/repos/{self._repo}/compare/{base}...{head}",
+                None,
+                accept="application/vnd.github.v3.diff",
+            )
+        except ForgeError as exc:
+            if "404" in str(exc) or "422" in str(exc):
+                return None
+            raise
+        return response.text[:20000]
 
     # --- lifecycle effects (R-09) ----------------------------------------------
 

@@ -140,6 +140,16 @@ def test_add_comment_posts_to_issue() -> None:
     adapter.add_comment(ref, "still occurring")
 
 
+def test_compare_commits_requests_bounded_diff_media_type() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/repos/acme/payments/compare/old...new"
+        assert "application/vnd.github.v3.diff" in request.headers["Accept"]
+        return httpx.Response(200, text="diff --git a/app.py b/app.py\n+guard")
+
+    diff = make_adapter(handler).compare_commits("old", "new")
+    assert diff is not None and "+guard" in diff
+
+
 def test_auth_failure_raises_typed_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"message": "Bad credentials"})
@@ -181,6 +191,8 @@ def test_open_draft_proposal_posts_draft_pull() -> None:
     seen: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":  # idempotency probe: no open PR for the head
+            return httpx.Response(200, json=[])
         seen["path"] = request.url.path
         seen["json"] = request.read()
         return httpx.Response(
@@ -196,3 +208,100 @@ def test_open_draft_proposal_posts_draft_pull() -> None:
     assert seen["path"] == "/repos/acme/payments/pulls"
     assert b'"draft":true' in seen["json"]
     assert b'"base":"main"' in seen["json"]
+
+
+def test_open_draft_proposal_rebinds_existing_open_pull() -> None:
+    """R-15: a retried delivery binds to the open draft for its head branch."""
+    posts: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 7,
+                        "html_url": "https://github.com/acme/payments/pull/7",
+                        "head": {"ref": "wakey/fix-fp3f9a"},
+                    }
+                ],
+            )
+        posts.append(request)
+        return httpx.Response(201, json={"number": 8, "html_url": "x"})
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    ref = adapter.open_draft_proposal("wakey/fix-fp3f9a", "t", "b", base="main")
+    assert ref.issue_id == "7"
+    assert posts == [], "an open draft for the head branch must never be duplicated"
+
+
+def test_create_branch_tolerates_already_exists() -> None:
+    """R-15: retrying a crashed delivery resumes the existing branch."""
+    refs: dict[str, int] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.endswith("/git/ref/heads/main"):
+            return httpx.Response(200, json={"object": {"sha": "base-sha"}})
+        if request.method == "POST" and request.url.path.endswith("/git/refs"):
+            refs["post"] = refs.get("post", 0) + 1
+            return httpx.Response(422, json={"message": "Reference already exists"})
+        return httpx.Response(404, json={"message": "unexpected"})
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    adapter.create_branch("wakey/fix-3f9a", "main")  # must not raise
+    assert refs["post"] == 1
+
+
+def test_create_branch_from_pinned_sha_does_not_reresolve_moving_branch() -> None:
+    requests: list[httpx.Request] = []
+    pinned = "a" * 40
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST" and request.url.path.endswith("/git/refs"):
+            assert pinned.encode() in request.read()
+            return httpx.Response(201, json={"ref": "refs/heads/wakey/fix-pinned"})
+        return httpx.Response(404, json={"message": "branch ref must not be fetched"})
+
+    adapter = make_adapter(handler)
+    adapter.create_branch("wakey/fix-pinned", pinned)
+    assert [request.method for request in requests] == ["POST"]
+
+
+def test_find_ticket_by_marker_scans_open_wakey_issues() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "state=open" in str(request.url)
+        if "page=1" in str(request.url):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 1,
+                        "html_url": "https://github.com/acme/payments/issues/1",
+                        "body": "unrelated",
+                        "pull_request": {"url": "x"},  # PRs listed as issues are skipped
+                    },
+                    {
+                        "number": 2,
+                        "html_url": "https://github.com/acme/payments/issues/2",
+                        "body": "Fingerprint `fp:3f9a1b2c4d5e6f70` · Occurrences ×3",
+                    },
+                ],
+            )
+        return httpx.Response(200, json=[])
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    ref = adapter.find_ticket_by_marker("fp:3f9a1b2c4d5e6f70")
+    assert ref is not None and ref.issue_id == "2"
+
+
+def test_find_ticket_by_marker_returns_none_when_absent() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    config = GitHubConfig(token="ght_test", repo="acme/payments")
+    adapter = GitHubAdapter(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert adapter.find_ticket_by_marker("fp:missing") is None

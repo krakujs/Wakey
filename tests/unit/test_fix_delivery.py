@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from wakey.agents.fix import FixResult
 from wakey.agents.fix_delivery import FixProposalDelivery, format_proposal_body
 from wakey.core.models import Fingerprint, Severity, WorkState
 from wakey.core.storage import SQLiteStorage
-from wakey.forge.port import ConsoleForge
+from wakey.forge.port import ConsoleForge, TicketRef
 
 DIFF = (
     "--- a/billing.py\n"
@@ -137,3 +139,96 @@ def test_body_contains_diff_confidence_and_rollback() -> None:
     assert "Confidence:" in body
     assert "revert single commit" in body
     assert "Human review required — Wakey never merges." in body
+
+
+def test_delivery_branches_from_the_exact_tested_commit() -> None:
+    storage = SQLiteStorage(":memory:")
+
+    class BaseRecordingForge(ConsoleForge):
+        created_from = ""
+
+        def create_branch(self, branch: str, base: str) -> None:
+            self.created_from = base
+            super().create_branch(branch, base)
+
+    forge = BaseRecordingForge()
+    tested_sha = "a" * 40
+    result = FixProposalDelivery(storage, forge).deliver(
+        make_fingerprint(),
+        FixResult(True, "ok", DIFF, 1, files={"billing.py": "x"}),
+        RCA_SUMMARY,
+        base_ref=tested_sha,
+    )
+    assert result["delivered"] is True
+    assert forge.created_from == tested_sha
+
+
+# --- R-15: ambiguous delivery failures resume, never publish twins --------------------
+
+
+class LostDraftResponseForge(ConsoleForge):
+    """The draft PR lands remotely, then the response is lost."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.open_calls = 0
+
+    def open_draft_proposal(self, branch: str, title: str, body: str, base: str) -> TicketRef:
+        self.open_calls += 1
+        if self.open_calls == 1:
+            super().open_draft_proposal(branch, title, body, base)  # PR exists remotely
+            raise RuntimeError("response lost after GitHub opened the draft")
+        return super().open_draft_proposal(branch, title, body, base)  # idempotent bind
+
+
+def test_lost_draft_response_binds_existing_pr_never_duplicates() -> None:
+    storage = SQLiteStorage(":memory:")
+    forge = LostDraftResponseForge()
+    fingerprint = make_fingerprint()
+    delivery = FixProposalDelivery(storage, forge)
+    files = {"billing.py": "x = 1\n"}
+
+    with pytest.raises(RuntimeError, match="response lost"):
+        delivery.deliver(fingerprint, FixResult(True, "ok", DIFF, 1, files), RCA_SUMMARY)
+
+    resumed = storage.get_fingerprint("3f9a1b2c4d5e6f70")
+    assert resumed is not None
+    assert resumed.proposal_branch == "wakey/fix-3f9a1b2c", "branch intent persisted pre-call"
+
+    result = delivery.deliver(resumed, FixResult(True, "ok", DIFF, 1, files), RCA_SUMMARY)
+    assert result["delivered"] is True
+    assert result["branch"] == "wakey/fix-3f9a1b2c", "resume reuses the committed branch"
+    assert len(forge.proposals) == 1, "one remote proposal per intended operation"
+    stored = storage.get_fingerprint("3f9a1b2c4d5e6f70")
+    assert stored is not None
+    assert stored.proposal_url == "console://pulls/wakey/fix-3f9a1b2c"
+
+
+def test_crash_after_branch_before_pr_reuses_branch() -> None:
+    storage = SQLiteStorage(":memory:")
+
+    class CrashAfterBranchForge(ConsoleForge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.commit_calls = 0
+
+        def commit_files(self, branch: str, message: str, files: dict[str, str]) -> str:
+            self.commit_calls += 1
+            if self.commit_calls == 1:
+                raise RuntimeError("crash after branch creation")
+            return super().commit_files(branch, message, files)
+
+    forge = CrashAfterBranchForge()
+    delivery = FixProposalDelivery(storage, forge)
+    fingerprint = make_fingerprint()
+    files = {"billing.py": "x = 1\n"}
+
+    with pytest.raises(RuntimeError, match="crash after branch"):
+        delivery.deliver(fingerprint, FixResult(True, "ok", DIFF, 1, files), RCA_SUMMARY)
+    resumed = storage.get_fingerprint("3f9a1b2c4d5e6f70")
+    assert resumed is not None
+
+    result = delivery.deliver(resumed, FixResult(True, "ok", DIFF, 1, files), RCA_SUMMARY)
+    assert result["branch"] == "wakey/fix-3f9a1b2c", "no orphan suffix branch after resume"
+    assert list(forge.branches) == ["wakey/fix-3f9a1b2c"]
+    assert len(forge.proposals) == 1

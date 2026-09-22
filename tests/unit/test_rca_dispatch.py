@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from wakey.agents.models import ModelReply
 from wakey.agents.rca import ModelRca, RcaBudget, RcaDispatcher, _parse_model_reply
-from wakey.core.models import Fingerprint, Severity, TraceFrame, WorkState
+from wakey.core.models import DeployEvent, Fingerprint, Service, Severity, TraceFrame, WorkState
 from wakey.core.storage import SQLiteStorage
 from wakey.forge.port import ConsoleForge
 from wakey.security.redaction import RedactionEngine
@@ -28,13 +30,14 @@ def make_fp(template: str, with_frames: bool = False) -> Fingerprint:
 
 
 class ScriptedModel:
-    def __init__(self, reply: str) -> None:
+    def __init__(self, reply: str, data: dict[str, str] | None = None) -> None:
         self.reply = reply
+        self.data = data or {}
         self.prompts: list[tuple[str, str]] = []
 
     def complete(self, system: str, prompt: str) -> ModelReply:
         self.prompts.append((system, prompt))
-        return ModelReply(text=self.reply, data={})
+        return ModelReply(text=self.reply, data=self.data)
 
 
 def test_budget_caps_hourly_dispatches(tmp_path) -> None:
@@ -50,6 +53,14 @@ def test_budget_caps_hourly_dispatches(tmp_path) -> None:
         fp for fp in storage.list_active_fingerprints() if fp.state is WorkState.QUEUED_RCA
     ]
     assert len(remaining) == 3
+
+
+def test_budget_caps_worst_case_hourly_tokens() -> None:
+    budget = RcaBudget(max_per_hour=100, max_tokens_per_hour=1024)
+    assert budget.try_take(1000, estimated_tokens=512)
+    assert budget.try_take(1001, estimated_tokens=512)
+    assert not budget.try_take(1002, estimated_tokens=512)
+    assert budget.try_take(5000, estimated_tokens=512), "old reservations expire"
 
 
 def test_model_refines_classification_and_prompts_are_redacted(tmp_path) -> None:
@@ -69,9 +80,48 @@ def test_model_refines_classification_and_prompts_are_redacted(tmp_path) -> None
     assert any("code-fix" in body for _, body in forge.comments)
 
 
-def test_secret_in_fingerprint_never_reaches_model_prompt(tmp_path) -> None:
+def test_rca_prompt_includes_bounded_repo_and_deploy_diff_evidence(tmp_path) -> None:
     storage = SQLiteStorage(tmp_path / "wakey.db")
-    storage.save_fingerprint(make_fp("Request failed: AKIAIOSFODNN7EXAMPLE quota exceeded"))
+    storage.save_service(
+        Service(name="payments-api", repo="acme/payments", ingest_key_hash="0123456789abcdef")
+    )
+    storage.save_fingerprint(make_fp("AttributeError: charge", with_frames=True))
+    now = datetime(2026, 9, 22, 10, tzinfo=UTC)
+    storage.save_deploy(
+        DeployEvent(service="payments-api", environment="prod", sha="new", deployed_at=now)
+    )
+    storage.save_deploy(
+        DeployEvent(
+            service="payments-api",
+            environment="prod",
+            sha="old",
+            deployed_at=now - timedelta(hours=1),
+        )
+    )
+    forge = ConsoleForge()
+    forge.files["app/billing.py"] = "def charge(order):\n    return order.total\n"
+    forge.comparisons[("old", "new")] = "- return order.total\n+ return order.total or 0"
+    model = ScriptedModel(
+        "CLASS: code-fix\nCONFIDENCE: 0.91\nSUMMARY: missing total guard.",
+        {"model": "cheap-review", "input_tokens": "120", "output_tokens": "20"},
+    )
+    dispatcher = RcaDispatcher(storage, forge, model_rca=ModelRca(model, RedactionEngine()))
+
+    dispatcher.run_once()
+
+    prompt = model.prompts[0][1]
+    assert "Repository: acme/payments" in prompt
+    assert "FILE app/billing.py" in prompt
+    assert "DEPLOY DIFF old...new" in prompt
+    audit = storage.list_audit(subject="fp:3f9a1b2c4d5e6f70")[0]
+    assert audit.details["model"] == "cheap-review"
+    assert audit.details["input_tokens"] == "120"
+
+
+def test_secret_in_fingerprint_never_reaches_model_prompt(tmp_path) -> None:
+    aws_fixture = "AKIA" + "IOSFODNN7EXAMPLE"
+    storage = SQLiteStorage(tmp_path / "wakey.db")
+    storage.save_fingerprint(make_fp(f"Request failed: {aws_fixture} quota exceeded"))
     model = ScriptedModel("CLASS: infra\nCONFIDENCE: 0.8\nSUMMARY: quota.")
     dispatcher = RcaDispatcher(
         storage, ConsoleForge(), model_rca=ModelRca(model, RedactionEngine())
@@ -79,7 +129,7 @@ def test_secret_in_fingerprint_never_reaches_model_prompt(tmp_path) -> None:
     dispatcher.run_once()
     assert model.prompts, "model consulted"
     _, prompt = model.prompts[0]
-    assert "AKIAIOSFODNN7EXAMPLE" not in prompt
+    assert aws_fixture not in prompt
     assert "REDACTED:aws_access_key" in prompt
 
 

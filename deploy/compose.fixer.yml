@@ -1,0 +1,52 @@
+# Isolated fix-executor topology (readiness #5) — an overlay over docker-compose.yml.
+#
+#   docker compose -f docker-compose.yml -f deploy/compose.fixer.yml up -d
+#
+# wakeyd keeps zero container-runtime access. Test execution moves to the
+# `fixer` service — the only component that reaches a Docker daemon, and only
+# through docker-socket-proxy with a narrow API allowlist (containers + local
+# image inspect; no images/pull, no volumes, no exec, no privileged). The
+# sandbox image is prebuilt and digest-pinned by the operator; the proxy makes
+# `--pull never` enforced at the daemon boundary. For Cloud Run, host the
+# fixer on a small VM (or GKE) behind HTTPS with ingress restricted to the
+# wakey service account, and set WAKEY_SANDBOX_EXECUTOR_URL/TOKEN there.
+services:
+  wakey:
+    environment:
+      WAKEY_SANDBOX_EXECUTOR_URL: http://fixer:8490
+      WAKEY_SANDBOX_EXECUTOR_TOKEN: ${WAKEY_EXECUTOR_TOKEN:?Set WAKEY_EXECUTOR_TOKEN (shared executor bearer token)}
+
+  fixer:
+    image: wakey:dev
+    build:
+      context: .
+      dockerfile: Dockerfile.executor
+    command: ["wakey-executor", "--host", "0.0.0.0", "--port", "8490"]
+    restart: unless-stopped
+    environment:
+      WAKEY_SANDBOX_IMAGE: ${WAKEY_SANDBOX_IMAGE:?Prebuild and pin a trusted sandbox test image}
+      WAKEY_EXECUTOR_TOKEN: ${WAKEY_EXECUTOR_TOKEN:?Set WAKEY_EXECUTOR_TOKEN}
+      WAKEY_LOG_LEVEL: ${WAKEY_LOG_LEVEL:-INFO}
+      DOCKER_HOST: tcp://docker-proxy:2375
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    depends_on:
+      - docker-proxy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8490/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  docker-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1" # create/start/wait/rm for sandbox runs (capped by the runner)
+      IMAGES: "1" # local image inspect only; pulls are not granted
+      POST: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 128m
+    cpus: 0.25

@@ -100,10 +100,16 @@ def _restore_backup(settings: Settings, file: str) -> int:
 
 def _run_setup_token(force: bool) -> int:
     settings = Settings.from_env(dict(os.environ))
-    auth = AuthManager(open_storage(settings))
-    token, _ = auth.ensure_setup_token(force=force)
-    print(token)
-    return 0
+    storage = open_storage(settings)
+    try:
+        token, created = AuthManager(storage).ensure_setup_token(force=force)
+        if not created:
+            print("An unused setup token exists. Use setup-token --force to replace it.")
+            return 1
+        print(token)
+        return 0
+    finally:
+        storage.close()
 
 
 def _run_backup(settings: Settings, out: str | None) -> int:
@@ -134,7 +140,14 @@ def load_dotenv(path: str = ".env") -> None:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        key, value = key.strip(), value.strip().strip("'\"")
+        import shlex  # noqa: PLC0415 — parse quotes/comments without expansion
+
+        key = key.strip()
+        try:
+            tokens = shlex.split(value, comments=True)
+        except ValueError:
+            continue
+        value = " ".join(tokens)
         if key and key not in os.environ:
             os.environ[key] = value
 
@@ -174,6 +187,7 @@ def _serve(args: argparse.Namespace) -> int:
         redactor=components.redactor,
         runtime=components.runtime,
         secret_box=components.secret_box,
+        fix_executor=components.fix_executor,
         commands=components.commands,
     )
     configured = "configured" if components.storage.has_services() else "no services registered"

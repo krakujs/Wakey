@@ -31,12 +31,33 @@ def proposal_branch(fingerprint: Fingerprint, attempt: int = 1) -> str:
     return stem if attempt == 1 else f"{stem}-{attempt}"
 
 
+def _bound_attempt(branch: str | None, fingerprint: Fingerprint) -> int:
+    """Which suffix a persisted branch name corresponds to (1 for the stem)."""
+    if not branch:
+        return 1
+    stem = proposal_branch(fingerprint, 1)
+    if branch == stem:
+        return 1
+    if branch.startswith(f"{stem}-"):
+        suffix = branch[len(stem) + 1 :]
+        if suffix.isdigit():
+            return int(suffix)
+    return 1
+
+
 def proposal_title(fingerprint: Fingerprint) -> str:
     """Draft-marked title so no reader can mistake the proposal for mergeable."""
     return f"[wakey] Fix for fp:{fingerprint.fp_hash} (draft)"
 
 
-def format_proposal_body(rca_summary: str, diff: str, fingerprint: Fingerprint) -> str:
+def format_proposal_body(
+    rca_summary: str,
+    diff: str,
+    fingerprint: Fingerprint,
+    *,
+    test_summary: str = "Sandboxed repository test command passed.",
+    verifier_reason: str = "",
+) -> str:
     """Reviewer-ready body (WF-06 §9, AC 8): RCA, diff, confidence, rollback."""
     return "\n".join(
         (
@@ -51,12 +72,16 @@ def format_proposal_body(rca_summary: str, diff: str, fingerprint: Fingerprint) 
             diff,
             "```",
             "",
+            "## Tests",
+            test_summary,
+            "",
             "Confidence: agent-generated patch — review it against the RCA above before approving.",
             "",
             "## Rollback",
             "revert single commit.",
             "",
             NEVER_MERGES_NOTE,
+            f"<!-- wakey-verifier: pass; {verifier_reason} -->" if verifier_reason else "",
         )
     )
 
@@ -74,7 +99,15 @@ class FixProposalDelivery:
         self._forge = forge
 
     def deliver(
-        self, fingerprint: Fingerprint, fix_result: object, rca_summary: str
+        self,
+        fingerprint: Fingerprint,
+        fix_result: object,
+        rca_summary: str,
+        *,
+        base_ref: str | None = None,
+        test_summary: str = "Sandboxed repository test command passed.",
+        verifier_reason: str = "",
+        untested: bool = False,
     ) -> dict[str, object]:
         """Publish the tested patch to a draft branch/PR and audit the delivery."""
         ok = bool(getattr(fix_result, "ok", False))
@@ -87,15 +120,28 @@ class FixProposalDelivery:
             return {"delivered": False, "reason": "no changed files to publish"}
 
         base = self._forge.default_branch()
-        branch, attempt = self._create_branch(fingerprint)
+        # Persist the branch binding BEFORE any external effect (R-15): a
+        # crash after the branch/PR exist but before the binding is stored
+        # must resume this delivery, not publish a twin proposal. Adapters
+        # make the branch/PR effects idempotent per branch name.
+        branch = self._ensure_branch(fingerprint, base_ref or base)
         sha = self._forge.commit_files(
             branch,
             f"wakey: suggested fix for fp:{fingerprint.fp_hash}",
             files,
         )
-        body = format_proposal_body(rca_summary, str(getattr(fix_result, "diff", "")), fingerprint)
+        body = format_proposal_body(
+            rca_summary,
+            str(getattr(fix_result, "diff", "")),
+            fingerprint,
+            test_summary=test_summary,
+            verifier_reason=verifier_reason,
+        )
         body += f"\n\n**Published commit**: `{sha}` on `{branch}` (base `{base}`)\n"
         ref = self._forge.open_draft_proposal(branch, proposal_title(fingerprint), body, base=base)
+        self._forge.add_label(ref, "wakey/fix")
+        if untested:
+            self._forge.add_label(ref, "wakey/untested")
 
         updated = fingerprint.model_copy(
             update={
@@ -111,21 +157,38 @@ class FixProposalDelivery:
                 actor="agent",
                 action="proposal.deliver",
                 subject=f"fp:{fingerprint.fp_hash}",
-                details={"branch": branch, "commit": sha, "url": ref.url},
+                details={
+                    "branch": branch,
+                    "commit": sha,
+                    "url": ref.url,
+                    "untested": str(untested).lower(),
+                    "verifier": verifier_reason,
+                },
             )
         )
         return {"branch": branch, "commit": sha, "url": ref.url, "delivered": True}
 
-    def _create_branch(self, fingerprint: Fingerprint) -> tuple[str, int]:
-        """Create an isolated branch, suffixing on name collision (WF-06 §2)."""
+    def _ensure_branch(self, fingerprint: Fingerprint, base_ref: str) -> str:
+        """Bind a delivery branch, resuming the persisted intent (R-15).
+
+        The first candidate is whatever a previous crashed attempt already
+        persisted; suffixing only advances on real name collisions so a
+        retried delivery never orphans its committed branch.
+        """
+        start = _bound_attempt(fingerprint.proposal_branch, fingerprint)
         last_error: Exception | None = None
-        for attempt in range(1, MAX_BRANCH_ATTEMPTS + 1):
+        for attempt in range(start, MAX_BRANCH_ATTEMPTS + 1):
             name = proposal_branch(fingerprint, attempt)
             try:
-                self._forge.create_branch(name, self._forge.default_branch())
-                return name, attempt
+                self._forge.create_branch(name, base_ref)
             except Exception as exc:  # collision or forge error — try next suffix
                 last_error = exc
                 logger.warning("branch %s unavailable (%s), trying next suffix", name, exc)
+                continue
+            if name != fingerprint.proposal_branch:
+                self._storage.save_fingerprint(
+                    fingerprint.model_copy(update={"proposal_branch": name})
+                )
+            return name
         assert last_error is not None
         raise last_error

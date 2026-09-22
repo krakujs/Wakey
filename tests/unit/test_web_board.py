@@ -29,7 +29,7 @@ def login(client: TestClient) -> None:
     token, _ = client.app.state.auth.ensure_setup_token()  # type: ignore[attr-defined]
     response = client.post("/login", data={"token": token}, follow_redirects=False)
     assert response.status_code == 302
-    assert response.headers["location"] == "/board"
+    assert response.headers["location"] == "/"
 
 
 def make_fingerprint(state: WorkState = WorkState.OPEN) -> Fingerprint:
@@ -120,12 +120,12 @@ def test_render_board_html_colors_states() -> None:
     assert "wakey board — 4 active" in html
 
 
-def test_root_redirects_to_board(tmp_path) -> None:
+def test_empty_install_redirects_to_setup(tmp_path) -> None:
     storage = SQLiteStorage(tmp_path / "wakey.db")
     client = TestClient(create_app(Settings(), storage, MetricsRegistry(), forge=ConsoleForge()))
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 302
-    assert response.headers["location"] == "/board"
+    assert response.headers["location"] == "/setup"
 
 
 def test_settings_page_renders_without_secrets(tmp_path: Path) -> None:

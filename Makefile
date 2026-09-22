@@ -5,6 +5,9 @@ BIN   := .venv/bin
 
 .DEFAULT_GOAL := help
 
+serve: ## start the local server with the installed virtual environment
+	WAKEY_AUTO_MASTER_KEY=true $(BIN)/wakey serve
+
 .PHONY: help install check format test headers headers-check clean gate-sandbox image-dev
 
 help: ## show this help
@@ -15,19 +18,20 @@ install: ## create venv and install wakey + dev tools
 	$(BIN)/pip install --upgrade pip
 	$(BIN)/pip install -e ".[dev]"
 
-check: ## everything a commit must pass: format, lint, types, tests (host-safe caps)
-	$(BIN)/ruff format --check src tests scripts
-	$(BIN)/ruff check src tests scripts
+check: ## everything a commit must pass: format, lint, types, tests, coverage floors
+	$(BIN)/ruff format --check src tests scripts demo
+	$(BIN)/ruff check src tests scripts demo
 	$(BIN)/mypy
 	$(PY) scripts/add_spdx_headers.py --check
-	$(BIN)/pytest
+	$(BIN)/pytest --cov=wakey --cov-report=term-missing --cov-fail-under=90
+	$(BIN)/coverage report --include=*/wakey/security/* --fail-under=95
 
 test: ## tests with capped parallelism (≤4 workers — host guardrail)
 	$(BIN)/pytest -n 4
 
 format: ## auto-format and autofix
-	$(BIN)/ruff format src tests scripts
-	$(BIN)/ruff check --fix src tests scripts
+	$(BIN)/ruff format src tests scripts demo
+	$(BIN)/ruff check --fix src tests scripts demo
 
 headers: ## add missing SPDX license headers
 	$(PY) scripts/add_spdx_headers.py

@@ -26,3 +26,4 @@ wakey-data/
 wakey-data/*.db-wal
 wakey-data/*.db-shm
 .coverage
+wakey-connect-data/

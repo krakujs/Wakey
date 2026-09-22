@@ -25,6 +25,7 @@ from __future__ import annotations
 import difflib
 import logging
 import os
+import re
 import resource
 import shutil
 import signal
@@ -46,6 +47,10 @@ SKIPPED_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__"
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
 MAX_OUTPUT_CHARS = 6000
 DEFAULT_TIMEOUT_S = 300
+_FAILURE_LINE = re.compile(
+    r"^(?:FAILED\s+|FAIL:\s*|FAIL\s+|✖\s*)([^\s]+(?:\s*::\s*[^\s]+)?)",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,7 @@ class EligibilityInput:
     open_prs: int
     max_open_prs: int
     chronic: bool = False
+    human_requested: bool = False
 
 
 def check_eligibility(inputs: EligibilityInput) -> Eligibility:
@@ -75,11 +81,13 @@ def check_eligibility(inputs: EligibilityInput) -> Eligibility:
         return Eligibility(
             False, f"confidence {inputs.confidence:.2f} < floor {inputs.confidence_floor:.2f}"
         )
-    if inputs.autonomy is not Autonomy.FIX:
+    if inputs.autonomy is not Autonomy.FIX and not (
+        inputs.human_requested and inputs.autonomy in (Autonomy.TRIAGE, Autonomy.DIGEST)
+    ):
         return Eligibility(
             False, f"autonomy is {inputs.autonomy.value}, fix requires 'fix' or @wakey fix"
         )
-    if inputs.chronic:
+    if inputs.chronic and not inputs.human_requested:
         return Eligibility(False, "fingerprint is chronic — human ack required (VER-4)")
     if inputs.open_prs >= inputs.max_open_prs:
         return Eligibility(
@@ -117,11 +125,16 @@ def safe_resolve(workspace: Path, relative: str) -> Path:
 def snapshot_files(workspace: Path) -> dict[str, str]:
     """Supported text files under the workspace, relative-path keyed.
 
-    Vendor/VCS/runtime directories are skipped; oversized files are left
-    out (and therefore never patched) rather than read into memory.
+    Vendor/VCS/runtime directories are skipped; symlinked entries are
+    never read through (containment boundary, R-03 — a link pointing
+    outside the workspace must not leak its target into the snapshot);
+    oversized files are left out (and therefore never patched) rather
+    than read into memory.
     """
     files: dict[str, str] = {}
     for path in sorted(workspace.rglob("*")):
+        if path.is_symlink():  # never read through links: escape-proof the snapshot
+            continue
         if not path.is_file() or path.suffix not in SUPPORTED_EXTENSIONS:
             continue
         if SKIPPED_DIRS & set(path.relative_to(workspace).parts):
@@ -274,12 +287,20 @@ class ReproFirstFixer:
         test_command: list[str],
     ) -> FixResult:
         original = snapshot_files(workspace)  # immutable baseline (R-08)
+        original_outcome = self._runner(workspace, test_command)
+        original_failures = failure_signatures(original_outcome.output)
         repro_name, repro_content = self._proposer.repro_test(fingerprint, original)
         write_proposed_files(workspace, {repro_name: repro_content})
 
         baseline = self._runner(workspace, test_command)
         if baseline.ok:
             return FixResult(False, "repro test passed before any patch — it does not reproduce")
+        baseline_failures = failure_signatures(baseline.output)
+        if not original_outcome.ok and baseline_failures <= original_failures:
+            return FixResult(
+                False,
+                "reproduction did not add a distinct failure beyond the pre-existing suite",
+            )
         last_failure = baseline.output
 
         for attempt in range(1, self._max_iterations + 1):
@@ -289,7 +310,13 @@ class ReproFirstFixer:
             self._validate_patch(workspace, patch, repro_name)
             write_proposed_files(workspace, patch)
             outcome = self._runner(workspace, test_command)
-            if outcome.ok:
+            remaining_failures = failure_signatures(outcome.output)
+            equal_or_better = (
+                not original_outcome.ok
+                and bool(original_failures)
+                and remaining_failures <= original_failures
+            )
+            if outcome.ok or equal_or_better:
                 final = snapshot_files(workspace)
                 changed = {
                     path: content
@@ -298,7 +325,12 @@ class ReproFirstFixer:
                 }
                 return FixResult(
                     True,
-                    f"repro green after {attempt} patch attempt(s)",
+                    (
+                        f"repro green after {attempt} patch attempt(s); "
+                        f"{len(original_failures)} pre-existing failure(s) unchanged or reduced"
+                        if equal_or_better
+                        else f"repro green after {attempt} patch attempt(s)"
+                    ),
                     self._diff(original, final),
                     attempt,
                     changed,
@@ -310,8 +342,8 @@ class ReproFirstFixer:
     def _validate_patch(self, workspace: Path, patch: dict[str, str], repro_name: str) -> None:
         """Containment plus repro-integrity: no escapes, no repro tampering."""
         for relative in patch:
-            safe_resolve(workspace, relative)  # raises SandboxError on escape
-            if str(Path(relative)) == str(Path(repro_name)):
+            target = safe_resolve(workspace, relative)  # raises SandboxError on escape
+            if target == safe_resolve(workspace, repro_name):
                 raise SandboxError("proposer may not modify its own reproduction test")
 
     @staticmethod
@@ -327,3 +359,53 @@ class ReproFirstFixer:
             )
             chunks.extend(diff)
         return "\n".join(chunks)
+
+
+def failure_signatures(output: str) -> frozenset[str]:
+    """Extract stable common-runner failure identifiers from bounded output."""
+    return frozenset(match.group(1).strip() for match in _FAILURE_LINE.finditer(output))
+
+
+class UntestedFixer:
+    """Produce one scoped patch when a repository explicitly has no test suite.
+
+    This is deliberately a smaller path than :class:`ReproFirstFixer`: it
+    performs a single proposal, applies the same path-containment checks, and
+    never describes the result as verified.  The caller must label and render
+    the proposal as untested (FIX-7).
+    """
+
+    def __init__(self, proposer: Proposer) -> None:
+        self._proposer = proposer
+
+    def execute(
+        self,
+        workspace: Path,
+        fingerprint: Fingerprint,
+        rca_summary: str,
+    ) -> FixResult:
+        original = snapshot_files(workspace)
+        patch = self._proposer.patch(
+            fingerprint,
+            rca_summary,
+            original,
+            last_failure="No test command is configured. Propose the smallest RCA-backed patch.",
+        )
+        if not patch:
+            return FixResult(False, "model proposed no changes for the untested fix")
+        for relative in patch:
+            safe_resolve(workspace, relative)
+        write_proposed_files(workspace, patch)
+        final = snapshot_files(workspace)
+        changed = {
+            path: content for path, content in final.items() if original.get(path) != content
+        }
+        if not changed:
+            return FixResult(False, "model proposal produced no supported file changes")
+        return FixResult(
+            True,
+            "untested patch generated by explicit allow_without_tests policy",
+            ReproFirstFixer._diff(original, final),
+            1,
+            changed,
+        )

@@ -6,6 +6,54 @@
 
 ## Phase P1 — MVP ("the loop")
 
+### E3-T9 — Wakey Connect (approved 2026-09-17)
+
+Status: review (local implementation; hosted launch/live acceptance pending).
+ONB-3 default becomes our public App; BYO-App is advanced.
+AC: persistent secure bootstrap; device pairing bound to verified GitHub admin
+authority; repo-scoped tokens; outbound durable event relay; immediate runtime
+activation; cross-repo refusal in initial single-repo mode; disconnect/revocation;
+fresh-install documentation and adversarial tests. Public deployment requires
+owner-managed App configuration, endpoint and secrets plus live verification.
+Operator instructions and outstanding launch gates: [Wakey Connect](recipes/wakey-connect.md).
+
+First-run usability follow-up: `sh start.sh` preflight/health wait/token handoff,
+secret-safe Docker build context, fresh-install routing, pre-filled connected
+repository, ready-to-run ingest example, and separately packaged operator broker.
+Local verification does not close the hosted launch gate or the multi-account
+GitHub acceptance checklist.
+
+2026-09-18 managed deployment: PostgreSQL broker backend, Secret Manager mounts,
+dedicated runtime identity, regional HA database with backups/PITR, digest-pinned
+IAM-restricted Cloud Run staging and live safety probes implemented/verified.
+App key/client ID/public access/device flow confirmed. Python dependency audit
+remediated and added to CI. Human authorization and exact single-repository token
+scope are now verified against GitHub. Two-account isolation, webhook cutover,
+restore drill, alert routing and exposed-key rotation remain open;
+E3-T9 stays in review, not done.
+See the [2026-09-18 readiness check](readiness-check-2026-09-18.md): deployment-status
+event/permission and token scoping remain incomplete, external-write response loss
+still duplicates simulated tickets, and the old service's persistence needs review
+before replacement. No live repository writes were performed by that check.
+
+### Current implementation checkpoint — 2026-09-17
+
+This checkpoint supersedes older claims below where they conflict. P1 is **not
+complete**. See [implementation follow-up](implementation-followup-2026-09-17.md)
+for verification evidence and ordered remaining work.
+
+- E4-T7 / E6-T5: immediate restart and exact-once occurrence accounting covered;
+  external ticket-effect reconciliation remains open (do not claim exactly-once forge I/O).
+- E8-T1 / E8-T3: explicit human triage/digest/chronic handling, repository PR cap,
+  per-instance concurrency guard and configured service-path containment implemented.
+- E8-T4: live Docker runner implemented and directly tested; host installation
+  removed. Deployment integration and full test-result interpretation remain open.
+- E9-T1/T2: exact-fingerprint observation binding implemented in both databases;
+  legacy unbound windows remain inconclusive.
+- E11-T1: authenticated dashboard fix request now reaches the shared executor.
+- E1-T2 / E11-T5: PostgreSQL service and fail-on-unavailable storage tests added
+  to CI; remote CI execution and SQLite-to-PostgreSQL migration drill not verified.
+
 ### E1 — Foundation & repo hygiene
 
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
@@ -34,7 +82,7 @@
 |---|---|---|---|---|---|---|---|
 | E3-T1 | GitHub App manifest flow: redirect→create→exchange; private key encrypted at rest (SEC-4) | ONB-3, SEC-4 | WF-01 §3 | Contract test: manifest→installation→token minting; key never persisted unencrypted (test greps storage) | E2-T4 | M | todo |
 | E3-T2 | GitHub client: issues (create/comment/label/close/reopen), PRs (create draft), repos (clone URL), rate-limit aware, retry policy | TIK-*, FIX-5 | WF-04 | Contract tests vs recorded fixtures; respects rate limit; transient 5xx retried w/ backoff; dry-run mode emits planned calls | E3-T1 | M | in-progress (issues+comments+labels+close/reopen+draft PRs+git-data branch/commit publication (R-06), allowlist guard, typed errors, bounded retries; contract tests + simulator git API; dry-run mode and recorded-fixture CI artifacts remain) |
-| E3-T3 | GitHub webhook receiver: HMAC signature verify, ping, issue/PR comment events → `@wakey` command bus (parsing only) | RCA-5 | WF-01 §4, WF-07 | Forged signature rejected 401 (tested); commands parse into typed objects | E3-T2 | M | **done (core)** (HMAC fail-closed webhook + delivery dedup + typed parse/dispatch; drop/reopen/explain/status live, fix/retry named refusals; deny-by-default via WAKEY_AUTHORIZED_USERS; tests in test_commands/test_webhooks) |
+| E3-T3 | GitHub webhook receiver: HMAC signature verify, ping, issue/PR comment events → `@wakey` command bus (parsing only) | RCA-5 | WF-01 §4, WF-07 | Forged signature rejected 401 (tested); commands parse into typed objects | E3-T2 | M | **done (core)** (HMAC fail-closed webhook — native GitHub `X-Hub-Signature-256`/`X-GitHub-Delivery` + App stored secret verified 2026-09-17 — delivery dedup + typed parse/dispatch; drop/reopen/explain/status live, fix/retry named refusals; deny-by-default via WAKEY_AUTHORIZED_USERS; tests in test_commands/test_webhooks/test_reliability_regressions) |
 | E3-T4 | PAT fallback auth | ONB-4 | WF-01 §3.5 | Same client interface as App auth; flagged "non-preferred" in dashboard | E3-T2 | S | todo |
 | E3-T5 | Setup wizard v1 + service registration: repo pick, service↔repo/path mapping, ingest key generation + rotation | ONB-2, ING-1 | WF-01 §5 | New service gets working ingest key in <2min; key rotation invalidates old within 60s | E2-T2, E3-T5 | L | in-progress (registration API + wizard page live: one-time key display, hash-only storage, immediate-rotation invalidation (tests in test_registration); GitHub App manifest flow + encrypted key storage (E3-T1/SEC-4) remain) |
 | E3-T6 | Per-repo `wakey.yml` fetch/validate/cache (hot reload) | ONB-5, ONB-6, OPS-2 | WF-01 §6 | Config edit on GitHub reflected ≤30s without restart; invalid config keeps last-good with dashboard warning | E2-T2, E3-T2 | M | **done (core)** (30s refetch loop via ForgePort.fetch_file → wakey.yml validated → stored config drives policy; invalid file keeps last-good + metric; tests via simulator git contents; dashboard warning surface remains) |
@@ -99,14 +147,14 @@
 | ID | Task | Features | Spec | Acceptance criteria | Deps | Size | Status |
 |---|---|---|---|---|---|---|---|
 | E8-T1 | Eligibility gate (class ∧ confidence ∧ autonomy ∧ PR cap) with reasons surfaced | FIX-1 | WF-06 §2 | Each failing condition → distinct refusal reason (unit); caps tested under burst | E7-T5 | S | **done** (named refusals incl. chronic guard; 5 tests) |
-| E8-T2 | Repro-first loop: generate failing test from evidence → run → patch → green | FIX-2 | WF-06 §3 | Eval bench: repro test present in ≥90% of eligible attempts; patch-only attempts (no repro) rejected by gate | E8-T1, E7-T1 | L | in-progress (ReproFirstFixer: failing repro required, immutable original baseline, final diff vs original, failure output to proposer, repro-tamper rejection (R-08); eval bench remains) |
+| E8-T2 | Repro-first loop: generate failing test from evidence → run → patch → green | FIX-2 | WF-06 §3 | Eval bench: repro test present in ≥90% of eligible attempts; patch-only attempts (no repro) rejected by gate | E8-T1, E7-T1 | L | in-progress (ReproFirstFixer: failing repro required, immutable original baseline, pre-existing-failure comparison, final diff vs original, failure output to proposer, repro-tamper rejection (R-08); eval bench remains) |
 | E8-T3 | Constrained patcher: scope to service path, style-following, no drive-by refactors | FIX-3, SEC-2 | WF-06 §4 | Diff outside service path → rejected; AST-level "minimal diff" heuristic test on fixtures | E8-T2 | M | in-progress (safe_resolve rejects absolute/traversal/symlink escapes; supported-extension snapshot with vendor/VCS skip + size cap; AST minimal-diff heuristic remains) |
 | E8-T4 | Sandboxed test runner: repo `test_command`, network policy (off by default), resource limits, timeout | FIX-4, FIX-10 | WF-06 §5 | Suite timeout → clean failure report; network-blocked test env verified; results parsed into PR body | E8-T2 | M | **done (gate executable)** (minimal env, RLIMITs, process-group kill, unshare net-ns (R-03); `make gate-sandbox` runs the negative suite inside a network-less 512MB/1-CPU/64-pid container: 8/8 green — egress blocked, memory cap enforced, grandchild cleanup, traversal/symlink rejection; live fixing still disabled by default) |
 | E8-T5 | Draft PR pipeline: branch naming, PR template (RCA link, what/why, tests, confidence, rollback), linked issue | FIX-5 | WF-06 §6 | Golden-file PR body; PR is draft on creation (asserted); issue cross-linked | E8-T4, E3-T2 | M | **done** (delivery resolves default branch, collision-suffixed wakey/fix-* branch, commits the tested files (git data API, force=false), draft PR bound to base, fingerprint binding persisted (R-06); M2 loop E2E over simulator) |
-| E8-T6 | Spot-check verifier (2nd cheap model): diff-vs-RCA justification + injection leak check | FIX-6 | WF-06 §7 | Adversarial fixture (log-injected change) blocked; verifier verdict recorded in audit + PR hidden comment | E8-T5 | M | todo |
-| E8-T7 | No-test-suite handling + `allow_without_tests` flag | FIX-7 | WF-06 §8 | Repo w/o tests → no PR by default, RCA notes it; flag=true → PR labeled `wakey/untested` + lower confidence floor | E8-T5 | S | todo |
-| E8-T8 | Review feedback loop: `@wakey retry` with comments as context, new commit on same PR | FIX-8 | WF-07 §3 | Retry incorporates reviewer comment (eval fixture); second retry on same PR allowed, third requires human edit (cap) | E7-T7, E8-T5 | M | todo |
-| E8-T9 | Digest/approval mode (FIX-9): batched digest issue, ✅ releases candidate PRs | FIX-9 | WF-07 §4 | Digest contains exactly eligible candidates; ✅ by non-authorized user ignored; per-repo opt-in | E8-T5 | M | todo |
+| E8-T6 | Spot-check verifier (2nd cheap model): diff-vs-RCA justification + injection leak check | FIX-6 | WF-06 §7 | Adversarial fixture (log-injected change) blocked; verifier verdict recorded in audit + PR hidden comment | E8-T5 | M | **done (core)** (separate bounded model call, redacted DATA framing, malformed output fails closed, block labels/comments the ticket before branch creation, pass audit + hidden PR evidence) |
+| E8-T7 | No-test-suite handling + `allow_without_tests` flag | FIX-7 | WF-06 §8 | Repo w/o tests → no PR by default, RCA notes it; flag=true → PR labeled `wakey/untested` + lower confidence floor | E8-T5 | S | **done** (default refusal; explicit opt-in raises the effective confidence floor by 0.1, uses a single scoped patch, labels the draft `wakey/untested`, and states verification is unavailable) |
+| E8-T8 | Review feedback loop: `@wakey retry` with comments as context, new commit on same PR | FIX-8 | WF-07 §3 | Retry incorporates reviewer comment (eval fixture); second retry on same PR allowed, third requires human edit (cap) | E7-T7, E8-T5 | M | **done (core)** (authorized inline feedback is redacted, runs against the exact current proposal SHA, updates the same branch/PR, and refuses the third retry; full live GitHub acceptance remains part of the G-gate) |
+| E8-T9 | Digest/approval mode (FIX-9): batched digest issue, explicit approval releases candidate PRs | FIX-9 | WF-07 §4 | Digest contains exactly eligible candidates; unauthorized approval ignored; per-repo opt-in | E8-T5 | M | **done (core)** (one audited issue/repo/UTC day, digest-autonomy eligibility, authorized `@wakey approve <fingerprint>` exact release, duplicate-release guard; live GitHub acceptance remains) |
 
 ### E9 — Verification
 

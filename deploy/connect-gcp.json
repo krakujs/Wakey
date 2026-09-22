@@ -1,0 +1,13 @@
+{
+  "project": "wakey-ai",
+  "region": "us-central1",
+  "service": "wakey-connect",
+  "database_instance": "wakey-connect-db",
+  "database": "wakey_connect",
+  "runtime_account": "wakey-connect-runtime",
+  "app_slug": "wakey-ai",
+  "client_id": "Iv23liu6nMav2T8btXBf",
+  "sql_tier": "db-custom-1-3840",
+  "sql_availability": "REGIONAL",
+  "max_instances": 2
+}

@@ -5,6 +5,36 @@
 
 ## Purpose & trigger
 
+### Execution contract implemented 2026-09-17
+
+The live executor injects `DockerTestRunner`; the host `run_tests` helper is only
+for trusted local fixtures. Each test attempt runs in a fresh, non-root container
+with no network, a read-only root and checkout, bounded tmpfs, CPU/memory/PID
+limits, bounded output and timeout cleanup. `WAKEY_SANDBOX_IMAGE` must refer to
+an operator-provisioned image containing test dependencies. Missing Docker/image
+or infrastructure failure aborts inconclusively; no host fallback or host pip
+installation is permitted. Cloud Run deployment therefore needs a separate
+executor host before enabling fixes there. The remote executor service now
+ships its own Docker client, streams the bounded workspace archive over stdin
+into sandbox tmpfs (no cross-container host-path assumption), and talks only to
+the restricted Docker socket proxy. The tested checkout is resolved to an exact
+commit SHA and proposal branches are created from that same SHA.
+
+`wakey.yml.path` bounds both model snapshots and test execution; published paths
+are translated back to repository-relative paths. Workspaces are unique per job.
+One fix runs per executor instance; repository-wide open proposals count toward
+the configured cap. Explicit authenticated human requests permit triage/digest
+fixes and acknowledge the chronic guard, but never bypass confidence, class,
+scope, busy-state or capacity checks. Observe mode still runs no agent.
+
+The executor now runs a separate fail-closed verifier over redacted RCA/diff/test
+data before creating a branch. Repositories without a test command still refuse
+by default; explicit `allow_without_tests` raises the confidence floor, permits
+one scoped patch, and produces an unmistakably untested draft. The test loop
+records the original suite failures and accepts a patched run only when the repro
+is gone and residual failures are a subset of that baseline. Eval-bench scoring
+and durable distributed job ownership remain separate release work.
+
 For `code-fix` fingerprints that pass the eligibility gate: produce a **draft PR containing a reproduction test + minimal patch**, with tests run in isolation. Triggered by: RCA verdict (autonomy `fix`), `@wakey fix` (any autonomy ≥ triage), or digest release (WF-07 §4). **The fix agent writes code; it never opens a non-draft PR, never merges, never force-pushes.**
 
 ## Actors & I/O

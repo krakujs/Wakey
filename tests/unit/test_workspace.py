@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-import wakey.agents.fix as fix_mod
 import wakey.agents.workspace as ws_mod
 from wakey.agents.workspace import (
     MAX_TARBALL_BYTES,
@@ -67,6 +66,8 @@ def test_runtime_prepare_fetches_and_extracts(tmp_path, monkeypatch) -> None:
     def fake_get(url, **kwargs):
         if str(url).endswith("/repos/acme/fixture"):
             return FakeResponse(200, json.dumps({"default_branch": "main"}).encode())
+        if "/git/ref/heads/main" in str(url):
+            return FakeResponse(200, json.dumps({"object": {"sha": "a" * 40}}).encode())
         return FakeResponse(200, raw)
 
     monkeypatch.setattr("wakey.agents.workspace.httpx.get", fake_get)
@@ -74,6 +75,31 @@ def test_runtime_prepare_fetches_and_extracts(tmp_path, monkeypatch) -> None:
     workspace = runtime.prepare("acme/fixture")
     assert (workspace.path / "billing.py").read_text() == "value = 1\n"
     assert workspace.default_branch == "main"
+    assert workspace.base_sha == "a" * 40
+    second = runtime.prepare("acme/fixture")
+    assert second.path != workspace.path
+    assert workspace.path.exists()
+
+
+def test_runtime_prepare_fetches_requested_branch_at_exact_sha(tmp_path, monkeypatch) -> None:
+    raw = make_tar({"root/app.py": b"value = 2\n"})
+    seen: list[str] = []
+
+    def fake_get(url, **kwargs):
+        seen.append(str(url))
+        if str(url).endswith("/repos/acme/fixture"):
+            return FakeResponse(200, b'{"default_branch":"main"}')
+        if "/git/ref/heads/wakey%2Ffix-1" in str(url):
+            return FakeResponse(200, json.dumps({"object": {"sha": "d" * 40}}).encode())
+        return FakeResponse(200, raw)
+
+    monkeypatch.setattr("wakey.agents.workspace.httpx.get", fake_get)
+    workspace = WorkspaceRuntime(
+        token="t", api_base="https://api.test", work_root=tmp_path
+    ).prepare("acme/fixture", ref="wakey/fix-1")
+    assert workspace.default_branch == "main"
+    assert workspace.base_sha == "d" * 40
+    assert any(url.endswith("/tarball/" + "d" * 40) for url in seen)
 
 
 def test_runtime_prepare_unreachable_repo(tmp_path, monkeypatch) -> None:
@@ -101,37 +127,50 @@ class FakeResponse:
 
 def test_runtime_tarball_fetch_failure(tmp_path, monkeypatch) -> None:
     def fake_get(url, **kwargs):
-        status = 404 if "/tarball/" in str(url) else 200
-        return FakeResponse(status, json.dumps({"default_branch": "main"}).encode())
+        if "/tarball/" in str(url):
+            return FakeResponse(404, b"{}")
+        if "/git/ref/heads/" in str(url):
+            return FakeResponse(200, json.dumps({"object": {"sha": "b" * 40}}).encode())
+        return FakeResponse(200, json.dumps({"default_branch": "main"}).encode())
 
     monkeypatch.setattr("wakey.agents.workspace.httpx.get", fake_get)
     runtime = WorkspaceRuntime(token="t", api_base="https://api.test", work_root=tmp_path)
     with pytest.raises(WorkspaceError, match="tarball fetch failed"):
         runtime.prepare("acme/fixture")
+    assert list(tmp_path.iterdir()) == []
 
 
-def test_bootstrap_runs_pip_steps(tmp_path, monkeypatch) -> None:
-    """requirements.txt + pyproject.toml both trigger bounded pip steps."""
-    seen: list[list[str]] = []
-
-    def fake_run(workspace, command, timeout_s=300, network_ns=True):
-        seen.append(command)
-        return fix_mod.TestOutcome(False, "pip unavailable in sandbox")
-
-    monkeypatch.setattr(ws_mod, "run_tests", fake_run)
-
+def test_prepare_never_installs_repository_dependencies(tmp_path, monkeypatch) -> None:
+    """Even installation hooks are only downloaded, never executed on the host."""
     raw = make_tar(
         {
             "root/requirements.txt": b"requests\n",
-            "root/pyproject.toml": b"[project]\nname = 'x'\n",
+            "root/setup.py": b"raise RuntimeError('must not execute')\n",
         }
     )
-    extract_tarball_bytes(raw, tmp_path)
+
+    def fake_get(url, **kwargs):
+        if "/tarball/" in url:
+            return FakeResponse(200, raw)
+        if "/git/ref/heads/" in url:
+            return FakeResponse(
+                200, b'{"object":{"sha":"cccccccccccccccccccccccccccccccccccccccc"}}'
+            )
+        return FakeResponse(200, b'{"default_branch":"main"}')
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("host subprocess execution forbidden")
+
+    monkeypatch.setattr(ws_mod.httpx, "get", fake_get)
+    monkeypatch.setattr("subprocess.Popen", forbidden)
     runtime = WorkspaceRuntime(token=None, api_base="https://api.test", work_root=tmp_path)
-    runtime._bootstrap(tmp_path)
-    assert len(seen) == 2, "requirements + editable install both attempted"
-    assert any("requirements.txt" in " ".join(c) for c in seen)
-    assert any("-e" in " ".join(c) for c in seen)
+    assert (runtime.prepare("acme/repo").path / "setup.py").exists()
+
+
+def test_stripped_root_cannot_escape(tmp_path):
+    raw = make_tar({"root/../outside.txt": b"blocked"})
+    with pytest.raises(WorkspaceError, match="escapes"):
+        extract_tarball_bytes(raw, tmp_path)
 
 
 def test_cleanup_removes_workspace(tmp_path, monkeypatch) -> None:

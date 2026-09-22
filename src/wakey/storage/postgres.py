@@ -46,7 +46,7 @@ from wakey.core.models import (
 from wakey.core.storage import Storage
 from wakey.security.secretbox import SecretBox
 
-SCHEMA_VERSION = 1  # Postgres dialect version (independent of SQLite's)
+SCHEMA_VERSION = 3  # Postgres dialect version (independent of SQLite's)
 
 _QUIET_STATES = (
     WorkState.CLOSED_AUTO,
@@ -61,9 +61,9 @@ _FP_COLUMNS = (
     "last_seen, occurrences, state, ticket_issue_id, ticket_url, "
     "commented_at_occurrences, last_comment_at, verification_started_at, "
     "verification_start_occurrences, chronic, proposal_issue_id, proposal_url, "
-    "proposal_branch"
+    "proposal_branch, reserved_at, fix_commit_sha"
 )
-_FP_PLACEHOLDERS = ", ".join(["%s"] * 20)
+_FP_PLACEHOLDERS = ", ".join(["%s"] * 22)
 
 _PG_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS log_events (
     trace_id TEXT,
     request_id TEXT,
     attributes_json TEXT NOT NULL DEFAULT '{}',
-    dispatched INTEGER NOT NULL DEFAULT 0
+    dispatched INTEGER NOT NULL DEFAULT 0,
+    counted INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS fingerprints (
     fp_hash TEXT PRIMARY KEY,
@@ -113,7 +114,9 @@ CREATE TABLE IF NOT EXISTS fingerprints (
     chronic INTEGER NOT NULL DEFAULT 0,
     proposal_issue_id TEXT,
     proposal_url TEXT,
-    proposal_branch TEXT
+    proposal_branch TEXT,
+    reserved_at TEXT,
+    fix_commit_sha TEXT
 );
 CREATE TABLE IF NOT EXISTS deliveries (
     service TEXT NOT NULL,
@@ -180,6 +183,25 @@ class PostgresStorage(Storage):
     def _migrate(self) -> None:
         with self._lock, self._conn.transaction(), self._conn.cursor() as cur:
             cur.execute(_PG_SCHEMA)
+            row = cur.execute(
+                "SELECT value FROM meta WHERE key = %s", ("schema_version",)
+            ).fetchone()
+            current = int(row["value"]) if row else 0
+            if current < 2:
+                # v2: ticket-creation intent + fix-commit binding (WF-08/DET-14)
+                # plus the per-event counted flag for exactly-once counting
+                cur.execute("ALTER TABLE fingerprints ADD COLUMN IF NOT EXISTS reserved_at TEXT")
+                cur.execute("ALTER TABLE fingerprints ADD COLUMN IF NOT EXISTS fix_commit_sha TEXT")
+                cur.execute(
+                    "ALTER TABLE log_events ADD COLUMN IF NOT EXISTS counted "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
+            if current < 3:
+                cur.execute("ALTER TABLE log_events ADD COLUMN IF NOT EXISTS fp_hash TEXT")
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_events_fingerprint_ts "
+                    "ON log_events (fp_hash, ts)"
+                )
             cur.execute(
                 "INSERT INTO meta (key, value) VALUES (%s, %s) "
                 "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
@@ -253,6 +275,21 @@ class PostgresStorage(Storage):
                 (DeliveryState.COMPLETED.value, _now_iso(), service, delivery_id),
             )
 
+    def claim_delivery(self, service: str, delivery_id: str) -> Delivery | None:
+        with self._lock, self._conn.transaction():
+            row = self._conn.execute(
+                "UPDATE deliveries SET state = %s, updated_at = %s "
+                "WHERE service = %s AND delivery_id = %s AND state = %s RETURNING *",
+                (
+                    DeliveryState.PROCESSING.value,
+                    _now_iso(),
+                    service,
+                    delivery_id,
+                    DeliveryState.PENDING.value,
+                ),
+            ).fetchone()
+        return None if row is None else Delivery.model_validate(row)
+
     def fail_delivery(self, service: str, delivery_id: str, max_attempts: int) -> DeliveryState:
         with self._lock, self._conn.transaction():
             row = self._conn.execute(
@@ -272,6 +309,11 @@ class PostgresStorage(Storage):
 
     def recover_stale_deliveries(self) -> int:
         with self._lock, self._conn.transaction():
+            self._conn.execute(
+                "UPDATE fingerprints SET state = %s, reserved_at = NULL "
+                "WHERE ticket_url IS NULL AND reserved_at IS NOT NULL",
+                (WorkState.NEW.value,),
+            )
             cur = self._conn.execute(
                 "UPDATE deliveries SET state = %s, updated_at = %s WHERE state = %s",
                 (DeliveryState.PENDING.value, _now_iso(), DeliveryState.PROCESSING.value),
@@ -355,44 +397,85 @@ class PostgresStorage(Storage):
 
     def record_occurrence(self, incoming: Fingerprint, delta: int = 1) -> Fingerprint:
         with self._lock, self._conn.transaction():
-            cur = self._conn.execute(
-                f"INSERT INTO fingerprints ({_FP_COLUMNS}) "
-                f"VALUES ({_FP_PLACEHOLDERS}) "
-                "ON CONFLICT (fp_hash) DO UPDATE SET "
-                "template = EXCLUDED.template, frames_json = EXCLUDED.frames_json, "
-                "severity = EXCLUDED.severity, last_seen = EXCLUDED.last_seen, "
-                "occurrences = fingerprints.occurrences + %s "
-                "RETURNING *",
+            row = self._upsert_occurrence_locked(incoming, delta)
+        return self._fp_from_row(row)
+
+    def claim_event(self, event: LogEvent, fingerprint: Fingerprint) -> Fingerprint:
+        """Persist the event and count it once (see ABC docstring)."""
+        with self._lock, self._conn.transaction():
+            self._conn.execute(
+                "INSERT INTO log_events (id, ts, service, environment, severity, "
+                "message, source, trace_id, request_id, attributes_json) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (id) DO NOTHING",
                 (
-                    incoming.fp_hash,
-                    incoming.service,
-                    incoming.environment,
-                    incoming.template,
-                    json.dumps([f.model_dump() for f in incoming.frames]),
-                    incoming.severity.value,
-                    _iso(incoming.first_seen),
-                    _iso(incoming.last_seen),
-                    incoming.occurrences,
-                    incoming.state.value,
-                    incoming.ticket_issue_id,
-                    incoming.ticket_url,
-                    incoming.commented_at_occurrences,
-                    _iso(incoming.last_comment_at) if incoming.last_comment_at else None,
-                    _iso(incoming.verification_started_at)
-                    if incoming.verification_started_at
-                    else None,
-                    incoming.verification_start_occurrences,
-                    int(incoming.chronic),
-                    incoming.proposal_issue_id,
-                    incoming.proposal_url,
-                    incoming.proposal_branch,
-                    delta,
+                    event.id,
+                    _iso(event.ts),
+                    event.service,
+                    event.environment,
+                    event.severity.value,
+                    event.message,
+                    event.source,
+                    event.trace_id,
+                    event.request_id,
+                    json.dumps(event.attributes),
                 ),
             )
-            row = cur.fetchone()
-            if row is None:  # pragma: no cover — upsert always returns a row
-                raise RuntimeError("fingerprint upsert returned no row")
-        return self._fp_from_row(row)
+            row = self._conn.execute(
+                "SELECT counted FROM log_events WHERE id = %s FOR UPDATE", (event.id,)
+            ).fetchone()
+            if row is not None and row["counted"]:
+                stored_row = self._upsert_occurrence_locked(fingerprint, 0)
+            else:
+                stored_row = self._upsert_occurrence_locked(fingerprint, 1)
+                self._conn.execute(
+                    "UPDATE log_events SET counted = 1, fp_hash = %s WHERE id = %s",
+                    (fingerprint.fp_hash, event.id),
+                )
+        return self._fp_from_row(stored_row)
+
+    def _upsert_occurrence_locked(self, incoming: Fingerprint, delta: int) -> dict[str, Any]:
+        """Occurrence upsert; caller holds the lock and the transaction."""
+        cur = self._conn.execute(
+            f"INSERT INTO fingerprints ({_FP_COLUMNS}) "
+            f"VALUES ({_FP_PLACEHOLDERS}) "
+            "ON CONFLICT (fp_hash) DO UPDATE SET "
+            "template = EXCLUDED.template, frames_json = EXCLUDED.frames_json, "
+            "severity = EXCLUDED.severity, last_seen = EXCLUDED.last_seen, "
+            "occurrences = fingerprints.occurrences + %s "
+            "RETURNING *",
+            (
+                incoming.fp_hash,
+                incoming.service,
+                incoming.environment,
+                incoming.template,
+                json.dumps([f.model_dump() for f in incoming.frames]),
+                incoming.severity.value,
+                _iso(incoming.first_seen),
+                _iso(incoming.last_seen),
+                incoming.occurrences,
+                incoming.state.value,
+                incoming.ticket_issue_id,
+                incoming.ticket_url,
+                incoming.commented_at_occurrences,
+                _iso(incoming.last_comment_at) if incoming.last_comment_at else None,
+                _iso(incoming.verification_started_at)
+                if incoming.verification_started_at
+                else None,
+                incoming.verification_start_occurrences,
+                int(incoming.chronic),
+                incoming.proposal_issue_id,
+                incoming.proposal_url,
+                incoming.proposal_branch,
+                _iso(incoming.reserved_at) if incoming.reserved_at else None,
+                incoming.fix_commit_sha,
+                delta,
+            ),
+        )
+        row = cur.fetchone()
+        if row is None:  # pragma: no cover — upsert always returns a row
+            raise RuntimeError("fingerprint upsert returned no row")
+        return row
 
     def get_fingerprint(self, fp_hash: str) -> Fingerprint | None:
         with self._lock:
@@ -434,12 +517,13 @@ class PostgresStorage(Storage):
                 "verification_started_at = EXCLUDED.verification_started_at, "
                 "verification_start_occurrences = EXCLUDED.verification_start_occurrences, "
                 "chronic = EXCLUDED.chronic, proposal_issue_id = EXCLUDED.proposal_issue_id, "
-                "proposal_url = EXCLUDED.proposal_url, proposal_branch = EXCLUDED.proposal_branch",
+                "proposal_url = EXCLUDED.proposal_url, proposal_branch = EXCLUDED.proposal_branch, "
+                "reserved_at = EXCLUDED.reserved_at, fix_commit_sha = EXCLUDED.fix_commit_sha",
                 _fingerprint_params(fingerprint),
             )
 
     def list_active_fingerprints(self, service: str | None = None) -> list[Fingerprint]:
-        quiet = ",".join("?" for _ in _QUIET_STATES)
+        quiet = ",".join("%s" for _ in _QUIET_STATES)
         with self._lock:
             if service is None:
                 rows = self._conn.execute(
@@ -482,6 +566,8 @@ class PostgresStorage(Storage):
             proposal_issue_id=row["proposal_issue_id"],
             proposal_url=row["proposal_url"],
             proposal_branch=row["proposal_branch"],
+            reserved_at=_from_iso(row["reserved_at"]) if row["reserved_at"] else None,
+            fix_commit_sha=row["fix_commit_sha"],
         )
 
     # --- events & audit -----------------------------------------------------------
@@ -665,6 +751,34 @@ class PostgresStorage(Storage):
             for row in rows
         ]
 
+    def count_fingerprint_events(
+        self, fingerprint: Fingerprint, since: datetime, until: datetime
+    ) -> int | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT SUM(CASE WHEN fp_hash = %s THEN 1 ELSE 0 END) AS n, "
+                "SUM(CASE WHEN fp_hash IS NULL THEN 1 ELSE 0 END) AS unknown FROM log_events "
+                "WHERE service = %s AND environment = %s AND ts >= %s AND ts <= %s",
+                (
+                    fingerprint.fp_hash,
+                    fingerprint.service,
+                    fingerprint.environment,
+                    _iso(since),
+                    _iso(until),
+                ),
+            ).fetchone()
+        assert row is not None
+        return None if row["unknown"] else int(row["n"] or 0)
+
+    def count_events(self, service: str, environment: str, since: datetime, until: datetime) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM log_events WHERE service = %s AND environment = %s "
+                "AND ts >= %s AND ts <= %s",
+                (service, environment, _iso(since), _iso(until)),
+            ).fetchone()
+        return int(row["n"]) if row is not None else 0
+
     def prune_events(self, older_than: datetime) -> int:
         with self._lock, self._conn.transaction():
             cur = self._conn.execute("DELETE FROM log_events WHERE ts < %s", (_iso(older_than),))
@@ -711,6 +825,8 @@ def _fingerprint_params(fp: Fingerprint) -> tuple[object, ...]:
         fp.proposal_issue_id,
         fp.proposal_url,
         fp.proposal_branch,
+        _iso(fp.reserved_at) if fp.reserved_at else None,
+        fp.fix_commit_sha,
     )
 
 

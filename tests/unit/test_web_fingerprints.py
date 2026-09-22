@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from wakey.agents.fix_executor import FixExecutionOutcome
 from wakey.core.config import Autonomy, ServiceYaml, Settings
 from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import AuditEvent, Fingerprint, LogEvent, Service, WorkState
@@ -184,3 +185,26 @@ def test_fix_endpoint_redirects_with_flash_and_audits() -> None:
     followed = client.get(response.headers["location"])
     assert followed.status_code == 200
     assert "not code-fix" in followed.text  # refusal surfaced in the flash
+
+
+def test_authenticated_dashboard_uses_live_executor():
+    storage = SQLiteStorage(":memory:")
+    seed(storage, config=ServiceYaml(autonomy=Autonomy.TRIAGE))
+    seen = []
+
+    class Executor:
+        def execute(self, fp, config, *, human_requested=False):
+            seen.append((fp.fp_hash, config.autonomy, human_requested))
+            return FixExecutionOutcome("delivered", "Synthetic draft ready")
+
+    app = create_app(Settings(), storage, forge=ConsoleForge(), fix_executor=Executor())
+    with TestClient(app, follow_redirects=False) as client:
+        login(client)
+        response = client.post(
+            f"/fingerprints/{FP_HASH}/fix", headers={"Origin": "http://testserver"}
+        )
+        assert response.status_code == 303
+        assert "flash_ok=1" in response.headers["location"]
+    assert seen == [(FP_HASH, Autonomy.TRIAGE, True)]
+    assert storage.list_audit(subject=f"fp:{FP_HASH}")[0].action == "fix.requested"
+    storage.close()

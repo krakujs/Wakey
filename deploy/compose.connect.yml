@@ -1,0 +1,45 @@
+# Operator-only broker. Put TLS + ingress abuse protection in front of localhost:8480.
+services:
+  connect:
+    image: wakey-connect:local
+    build:
+      context: ..
+    command: ["wakey-connect", "--host", "0.0.0.0", "--port", "8480", "--data-dir", "/var/lib/wakey"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8480:8480"
+    environment:
+      WAKEY_CONNECT_CLIENT_ID: ${WAKEY_CONNECT_CLIENT_ID:?Set the public App client ID}
+      WAKEY_CONNECT_APP_SLUG: ${WAKEY_CONNECT_APP_SLUG:?Set the public App slug}
+      WAKEY_CONNECT_MASTER_KEY_FILE: /run/secrets/master_key
+      WAKEY_CONNECT_PRIVATE_KEY_FILE: /run/secrets/private_key
+      WAKEY_CONNECT_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
+    secrets:
+      - master_key
+      - private_key
+      - webhook_secret
+    volumes:
+      - connect-data:/var/lib/wakey
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8480/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+secrets:
+  master_key:
+    file: ${WAKEY_CONNECT_MASTER_KEY_FILE:?Set a mounted master-key file path}
+  private_key:
+    file: ${WAKEY_CONNECT_PRIVATE_KEY_FILE:?Set a mounted App PEM file path}
+  webhook_secret:
+    file: ${WAKEY_CONNECT_WEBHOOK_SECRET_FILE:?Set a mounted webhook-secret file path}
+volumes:
+  connect-data:

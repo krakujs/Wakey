@@ -132,6 +132,13 @@ class Fingerprint(BaseModel):
     proposal_issue_id: str | None = None
     proposal_url: str | None = None
     proposal_branch: str | None = None
+    # Ticket-creation intent timestamp (DET-14): set when a worker reserves
+    # the fingerprint for ticketing; a stale reservation with no ticket refs
+    # means the creating worker died and the wake path may re-arm.
+    reserved_at: datetime | None = None
+    # Merged fix commit bound at verification start (WF-08): deploys that do
+    # not carry this sha never count as "fix deployed" for the fingerprint.
+    fix_commit_sha: str | None = None
 
 
 class DeliveryState(StrEnum):

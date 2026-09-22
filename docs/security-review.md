@@ -10,13 +10,45 @@ link to a meaningful negative test.
 
 ## Verified controls (implementation + negative test on disk)
 
+- [x] Managed connector PostgreSQL persistence and cross-replica admission/relay
+      serialization: real database tests in `tests/contract/test_connect_postgres.py`.
+      The Cloud Run operator refuses ephemeral SQLite; staging readiness verifies
+      live database access. See `docs/recipes/wakey-connect-gcp.md` for evidence.
+- [x] Old cryptography constraint remediated after an image audit; `50.0.1` pinned,
+      full suite rerun and patched image audit passed. CI now audits Python
+      dependencies in the built image. This does not replace OS image scanning or
+      independent review of Wakey code. Exposed Google key rotation remains open.
+
+- [x] Wakey Connect local regression checks (2026-09-17): device pairing,
+      verified repository selection, scoped token minting, credential rejection,
+      cross-tenant relay isolation, persist-before-ack delivery, signed revocation,
+      encrypted connection storage, polling/admission limits and local form CSRF.
+      Evidence: `tests/unit/test_connect.py`, `tests/contract/test_connect_github.py`.
+      This is simulated-provider evidence, not hosted security certification.
+      [Launch checklist and trust boundaries](recipes/wakey-connect.md) remain open,
+      including ingress protection, independent review and live multi-account tests.
+
+- [x] Live runner isolation (2026-09-17): `FixExecutor` uses per-attempt Docker,
+      not host subprocesses; no host pip bootstrap, read-only checkout and root,
+      non-root user, no network, bounded tmpfs/resources/output, timeout cleanup.
+      `WAKEY_DOCKER_TESTS=1 pytest tests/unit/test_sandbox_runner.py` directly
+      exercises the live runner. Deployment integration is still open; the
+      existing Cloud Run service cannot use this local Docker runner as-is.
+- [x] Service subdirectory containment and repro-alias tampering rejection:
+      `tests/unit/test_fix_executor.py`, `tests/unit/test_fix.py`.
+
 - [x] Redaction: 18 secret families caught (AWS/GCP/GitHub/Stripe/PyPI/npm/
       SendGrid/JWT/bearer/private-key/url-creds/email/Luhn-guarded cards)
       — `tests/security/test_redaction.py` (SEC-1)
 - [x] Fail-closed redaction: engine error destroys field, never leaks
       — `test_redaction.py::test_fail_closed_on_engine_error` (SEC-1)
-- [x] Webhook auth: service-key 401, HMAC constant-time compare, signature
-      bound to body — `tests/security/test_webhook_auth.py` (ING-11)
+- [x] Webhook auth (updated 2026-09-17): service-key 401, HMAC
+      constant-time compare, signature bound to body, native GitHub
+      `X-Hub-Signature-256` accepted against the connected App's stored
+      webhook secret or `WAKEY_WEBHOOK_SECRET`, `X-GitHub-Delivery`
+      dedup, fail-closed with no secret —
+      `tests/security/test_webhook_auth.py`,
+      `tests/unit/test_reliability_regressions.py` (ING-11)
 - [x] Repo allowlist: `GitHubConfig` refuses construction for non-allowlisted
       repos (founder directive, SKILL.md §8) — note: the allowlist is
       *optional at construction*; making it mandatory for live use is open
@@ -50,9 +82,10 @@ link to a meaningful negative test.
 
 ## Previously claimed, NOT verified — downgraded/remaining (R-10 correction)
 
-- [ ] **Prompt-injection controls** (SEC-2): logs-as-data fences, canary
-      leakage checks, per-stage tool allowlists — *no implementation or
-      tests exist*. Earlier revision falsely marked this verified.
+- [x→partial] **Prompt-injection controls** (SEC-2): fenced prompts and the
+      adversarial corpus exist (`tests/unit/test_injection_corpus.py`). These
+      do not prove semantic patch safety; independent spot-check verification
+      and complete per-stage tool/canary coverage remain open.
 - [x→partial] **Caps & budgets** (SEC-7): RCA hourly budget (exhausted
       budget leaves work queued), per-service ticket/hour cap, PR cap in
       the FIX-1 gate, comment throttling — implemented with tests;
@@ -60,14 +93,19 @@ link to a meaningful negative test.
 - [ ] **ReDoS bound** (SEC-1): pattern length cap + compile validation limit
       the *configuration* surface only; they do **not** bound regex matching
       time. A real bounded-matching control (timeout/match caps) is open.
-- [ ] **Credential storage at rest**: `WAKEY_MASTER_KEY` is accepted but
-      unused; service webhook secrets are plaintext SQLite values; `.env`
-      gitignore is not encryption. Encryption at rest is open (E10).
-- [ ] **Dashboard authentication** (R-07): `/board`, `/api/settings` and all
-      operational APIs are unauthenticated; development exposure is
-      loopback-only by default (CLI `--host` and compose publish bind
-      127.0.0.1) as interim containment. First-run token + admin session
-      (WF-01/WF-12) is open.
+- [ ] **Credential storage at rest** (narrowed 2026-09-17): with
+      `WAKEY_MASTER_KEY` configured, SecretBox (AES-256-GCM) now encrypts
+      service webhook secrets and the GitHub App private key/webhook
+      secret at rest; without it the App callback still refuses plaintext
+      key storage (fail-closed) but service webhook secrets stay
+      plaintext. Remaining open: enforcing master-key configuration in
+      production boot, and `.env` remains plain file secrecy, not
+      encryption.
+- [x→resolved] **Dashboard authentication** (R-07): superseded by the
+      verified entry above — setup token (single-use, 30-min) + server-side
+      admin sessions gate the operational pages/APIs (2026-09-16 closure).
+      The residual open slice is the penetration probe of that surface
+      (listed under Open items).
 
 ## Open items (blocking M3 sign-off)
 
@@ -77,9 +115,11 @@ link to a meaningful negative test.
       session handling) — scheduled with GUI completion
 - [ ] Supply-chain: pip-audit gate in CI (planned with E1-T2 completion on
       a public remote)
-- [ ] Fix-execution sandbox negative tests (R-03): traversal/symlink escape,
-      secret-environment access, network egress, resource limits, child
-      cleanup — run in capped disposable containers
+- [x] Fix-execution sandbox negative tests (R-03): traversal/symlink escape,
+      secret-environment access, network egress, resource limits and child
+      cleanup run in capped disposable containers. The 2026-09-22 follow-up
+      also exercised the executor image through the restricted Docker proxy,
+      with workspace streaming into tmpfs and no shared host path.
 
 ## Posture summary
 

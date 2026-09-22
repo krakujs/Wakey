@@ -8,10 +8,14 @@ services:
     container_name: wakey
     restart: unless-stopped
     ports:
-      # Loopback only: the dashboard is unauthenticated until WF-01/WF-12 lands.
+      # Loopback only: use an SSH tunnel or authenticated HTTPS reverse proxy remotely.
       - "127.0.0.1:8477:8477"
     environment:
       WAKEY_MASTER_KEY: ${WAKEY_MASTER_KEY:-}
+      WAKEY_AUTO_MASTER_KEY: "true"
+      WAKEY_CONNECT_URL: ${WAKEY_CONNECT_URL:-}
+      WAKEY_BASE_URL: ${WAKEY_BASE_URL:-http://localhost:8477}
+      WAKEY_WEBHOOK_SECRET: ${WAKEY_WEBHOOK_SECRET:-}
       WAKEY_PORT: 8477
       WAKEY_GITHUB_TOKEN: ${WAKEY_GITHUB_TOKEN:-}
       WAKEY_GITHUB_REPO: ${WAKEY_GITHUB_REPO:-}
@@ -25,6 +29,9 @@ services:
       WAKEY_RETENTION_DAYS: ${WAKEY_RETENTION_DAYS:-30}
     volumes:
       - wakey-data:/var/lib/wakey
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
 
 volumes:
   wakey-data:

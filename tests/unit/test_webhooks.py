@@ -207,3 +207,48 @@ def test_expired_deploy_signature_rejected_before_persistence(env) -> None:
     )
     assert response.status_code == 401
     assert storage.list_recent_deploys("payments-api") == []
+
+
+def test_deployment_status_success_records_deploy_for_connected_repo(env) -> None:
+    client, storage, _ = env
+    payload = {
+        "action": "created",
+        "deployment": {"sha": "abc123def456", "environment": "prod"},
+        "deployment_status": {"state": "success"},
+        "repository": {"full_name": "acme/payments"},
+    }
+    response = post_webhook(client, payload, "deployment_status", delivery="ds-1")
+    assert response.json() == {"handled": True, "recorded": True}
+    deploys = storage.list_recent_deploys("payments-api", limit=5)
+    assert len(deploys) == 1
+    assert deploys[0].sha == "abc123def456"
+    assert deploys[0].environment == "prod", "the payload environment is authoritative"
+
+
+def test_deployment_status_unknown_repo_and_failure_ignored(env) -> None:
+    client, storage, _ = env
+    failed = post_webhook(
+        client,
+        {
+            "action": "created",
+            "deployment": {"sha": "x", "environment": "prod"},
+            "deployment_status": {"state": "failure"},
+            "repository": {"full_name": "acme/payments"},
+        },
+        "deployment_status",
+        delivery="ds-2",
+    )
+    assert failed.json() == {"handled": False}
+    other = post_webhook(
+        client,
+        {
+            "action": "created",
+            "deployment": {"sha": "x", "environment": "prod"},
+            "deployment_status": {"state": "success"},
+            "repository": {"full_name": "acme/other-repo"},
+        },
+        "deployment_status",
+        delivery="ds-3",
+    )
+    assert other.json() == {"handled": False}
+    assert storage.list_recent_deploys("payments-api", limit=5) == []

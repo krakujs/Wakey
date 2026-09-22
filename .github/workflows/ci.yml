@@ -21,8 +21,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev]"
-      - run: ruff format --check src tests scripts
-      - run: ruff check src tests scripts
+      - run: ruff format --check src tests scripts demo
+      - run: ruff check src tests scripts demo
       - run: python scripts/add_spdx_headers.py --check
 
   typecheck:
@@ -37,6 +37,22 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: wakey
+          POSTGRES_DB: wakey
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      WAKEYPG_REQUIRE_TESTS: "1"
     strategy:
       matrix:
         python-version: ["3.12", "3.14"]
@@ -47,11 +63,30 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev]"
       # Host-safe caps: per-test timeout (pyproject) + ≤4 workers (eng-standards §3)
-      # Coverage floor enforced in CI (R-11): below 90% fails the build.
+      # Coverage floors enforced in CI (R-11, eng-standards §7): overall ≥90%,
+      # and the security package meets the critical-module floor ≥95%.
       - run: pytest -n 4 --cov=wakey --cov-report=term-missing --cov-fail-under=90
+      - run: coverage report --include=*/wakey/security/* --fail-under=95
+
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - run: docker build -f Dockerfile.sandbox -t wakey:sandbox .
+      - run: WAKEY_DOCKER_TESTS=1 pytest tests/unit/test_sandbox_runner.py -q
 
   image:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t wakey:ci .
+      - name: Audit Python dependencies in the built image
+        timeout-minutes: 5
+        run: |
+          docker run --rm --memory 512m --cpus 1 --pids-limit 128 \
+            --read-only --tmpfs /tmp:rw,exec,size=192m --entrypoint sh wakey:ci -c \
+            'python -m pip install --quiet --no-cache-dir --target /tmp/audit "pip-audit>=2.9,<3" && PYTHONPATH=/tmp/audit python -m pip_audit --path /usr/local/lib/python3.14/site-packages --cache-dir /tmp/cache --progress-spinner off'

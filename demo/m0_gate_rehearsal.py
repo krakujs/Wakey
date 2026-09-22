@@ -38,7 +38,9 @@ def build_stack(tmp_path: Path) -> tuple[TestClient, GitHubSimulator, object]:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     server = serve_in_background(sim.create_app(), port)
-    config = GitHubConfig(token=SIM_TOKEN, repo="acme/payments", api_base=f"http://127.0.0.1:{port}")
+    config = GitHubConfig(
+        token=SIM_TOKEN, repo="acme/payments", api_base=f"http://127.0.0.1:{port}"
+    )
     adapter = GitHubAdapter(config)
 
     storage = SQLiteStorage(tmp_path / "wakey.db")
@@ -64,9 +66,7 @@ def main() -> int:
         client, sim, server, worker = build_stack(Path(tmp))
 
         error = "ERROR: connection refused to payments-db:5432 for order 84d8e79a"
-        response = client.post(
-            f"/ingest/{KEY}", content="\n".join([error] * 3)
-        ).json()
+        response = client.post(f"/ingest/{KEY}", content="\n".join([error] * 3)).json()
         assert response["accepted"] is True, response
         drain(worker)
         assert len(sim.issues) == 1, "simulator must hold exactly one created issue"

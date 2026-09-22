@@ -4,6 +4,17 @@
 
 ## Purpose & trigger
 
+### Reliability implementation note — 2026-09-17
+
+On startup, a **single active instance** requeues processing deliveries and
+releases ticketless reservations immediately, without waiting for a new event.
+Event accounting commits its fingerprint binding and count atomically in both
+SQLite and PostgreSQL. Worker shutdown drains the current delivery before storage
+closes. Multiple active instances are not supported by this recovery protocol.
+External forge effects remain at-least-once: remote success followed by a crash
+before local acknowledgement still needs reconciliation; this is not an
+exactly-once external-side-effect guarantee.
+
 Every log/deploy/vuln event a platform delivers enters through here. Triggered continuously. **Ingest never calls an LLM and never decides anything semantic** — it authenticates, normalizes, redacts, persists, and hands off to the queue (WF-03 decides).
 
 ## Actors & I/O

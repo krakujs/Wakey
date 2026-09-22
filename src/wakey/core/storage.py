@@ -38,7 +38,7 @@ from wakey.core.models import (
 )
 from wakey.security.secretbox import SecretBox
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 _MIGRATION_V2 = "ALTER TABLE services ADD COLUMN webhook_secret TEXT"
 
@@ -84,6 +84,17 @@ CREATE INDEX IF NOT EXISTS idx_deploys_service_ts ON deployments (service, deplo
 _MIGRATION_V5 = """
 ALTER TABLE audit ADD COLUMN prev_hash TEXT;
 ALTER TABLE audit ADD COLUMN entry_hash TEXT;
+"""
+
+_MIGRATION_V6 = """
+ALTER TABLE fingerprints ADD COLUMN reserved_at TEXT;
+ALTER TABLE fingerprints ADD COLUMN fix_commit_sha TEXT;
+ALTER TABLE log_events ADD COLUMN counted INTEGER NOT NULL DEFAULT 0;
+"""
+
+_MIGRATION_V7 = """
+ALTER TABLE log_events ADD COLUMN fp_hash TEXT;
+CREATE INDEX idx_events_fingerprint_ts ON log_events (fp_hash, ts);
 """
 
 _SCHEMA_V1 = """
@@ -176,6 +187,10 @@ class Storage(ABC):
         """Atomically move the oldest pending delivery to ``processing``."""
 
     @abstractmethod
+    def claim_delivery(self, service: str, delivery_id: str) -> Delivery | None:
+        """Claim a specific pending delivery; concurrent callers cannot both own it."""
+
+    @abstractmethod
     def complete_delivery(self, service: str, delivery_id: str) -> None:
         """Mark a fully processed delivery ``completed``."""
 
@@ -239,11 +254,20 @@ class Storage(ABC):
 
     @abstractmethod
     def save_log_event(self, event: LogEvent) -> bool:
-        """Persist one event; True if new, False if the id already exists.
+        """Persist one event; True if new, False if the id already exists."""
 
-        The boolean combines with :meth:`is_event_dispatched` to form the
-        exactly-once dispatch gate (R-02): an event is dispatched when it
-        is new *or* stored but not yet marked dispatched.
+    @abstractmethod
+    def claim_event(self, event: LogEvent, fingerprint: Fingerprint) -> Fingerprint:
+        """Persist ``event`` and count its occurrence exactly once, atomically.
+
+        Event content, the per-event ``counted`` flag, and the fingerprint
+        occurrence increment commit in one transaction (R-02): a crash
+        between them rolls the whole claim back, so a retry counts exactly
+        once. Dispatch is journaled separately —
+        :meth:`mark_event_dispatched` after the pipeline's policy step
+        completes — so a forge failure or crash replays the *policy* (the
+        fingerprint state machine absorbs re-runs, DET-14) without ever
+        re-counting. Returns the merged DB-truth fingerprint.
         """
 
     @abstractmethod
@@ -273,6 +297,20 @@ class Storage(ABC):
         self, service: str, environment: str | None = None, limit: int = 20
     ) -> list[LogEvent]:
         """Most recent stored (redacted) events, newest first (WF-12 detail page)."""
+
+    @abstractmethod
+    def count_events(self, service: str, environment: str, since: datetime, until: datetime) -> int:
+        """Events for one service/environment in ``[since, until]`` (WF-08).
+
+        Deployment-relative verification counts recurrences from the fix
+        deploy, not from the merge; this is the counting primitive.
+        """
+
+    @abstractmethod
+    def count_fingerprint_events(
+        self, fingerprint: Fingerprint, since: datetime, until: datetime
+    ) -> int | None:
+        """Exact recurrences, or None when legacy unbound events make the window uncertain."""
 
     # --- secrets, deploy events, issue binding, backup -------------------------
 
@@ -334,6 +372,8 @@ class SQLiteStorage(Storage):
                 3: _MIGRATION_V3,
                 4: _MIGRATION_V4,
                 5: _MIGRATION_V5,
+                6: _MIGRATION_V6,
+                7: _MIGRATION_V7,
             }
             for version in sorted(migrations):
                 if version > current:
@@ -402,6 +442,21 @@ class SQLiteStorage(Storage):
                 (DeliveryState.COMPLETED.value, now, service, delivery_id),
             )
 
+    def claim_delivery(self, service: str, delivery_id: str) -> Delivery | None:
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "UPDATE deliveries SET state = ?, updated_at = ? "
+                "WHERE service = ? AND delivery_id = ? AND state = ? RETURNING *",
+                (
+                    DeliveryState.PROCESSING.value,
+                    _iso(datetime.now(UTC)),
+                    service,
+                    delivery_id,
+                    DeliveryState.PENDING.value,
+                ),
+            ).fetchone()
+        return None if row is None else self._delivery_from_row(dict(row), DeliveryState.PROCESSING)
+
     def fail_delivery(self, service: str, delivery_id: str, max_attempts: int) -> DeliveryState:
         now = _iso(datetime.now(UTC))
         with self._lock, self._conn:
@@ -424,6 +479,13 @@ class SQLiteStorage(Storage):
         """Crash recovery: anything left ``processing`` goes back to ``pending``."""
         now = _iso(datetime.now(UTC))
         with self._lock, self._conn:
+            # Called before workers start, under the single-instance deployment contract.
+            # No creator survives a process restart, even if its reservation is young.
+            self._conn.execute(
+                "UPDATE fingerprints SET state = ?, reserved_at = NULL "
+                "WHERE ticket_url IS NULL AND reserved_at IS NOT NULL",
+                (WorkState.NEW.value,),
+            )
             cursor = self._conn.execute(
                 "UPDATE deliveries SET state = ?, updated_at = ? WHERE state = ?",
                 (DeliveryState.PENDING.value, now, DeliveryState.PROCESSING.value),
@@ -520,64 +582,129 @@ class SQLiteStorage(Storage):
 
     def record_occurrence(self, incoming: Fingerprint, delta: int = 1) -> Fingerprint:
         with self._lock, self._conn:
-            row = self._conn.execute(
-                "SELECT occurrences, first_seen, state, ticket_issue_id, ticket_url, "
-                "commented_at_occurrences, last_comment_at, verification_started_at, "
-                "verification_start_occurrences, chronic, proposal_issue_id, proposal_url, "
-                "proposal_branch FROM fingerprints WHERE fp_hash = ?",
-                (incoming.fp_hash,),
-            ).fetchone()
-            if row is None:
-                stored = incoming.model_copy(update={"occurrences": incoming.occurrences + delta})
-                self._conn.execute(
-                    "INSERT INTO fingerprints (fp_hash, service, environment, template, "
-                    "frames_json, severity, first_seen, last_seen, occurrences, state, "
-                    "ticket_issue_id, ticket_url, commented_at_occurrences, last_comment_at, "
-                    "verification_started_at, verification_start_occurrences, chronic, "
-                    "proposal_issue_id, proposal_url, proposal_branch) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    _fingerprint_params(stored),
-                )
-                return stored
+            return self._record_occurrence_locked(incoming, delta)
 
-            merged = incoming.model_copy(
-                update={
-                    "occurrences": int(row["occurrences"]) + delta,
-                    "first_seen": _from_iso(row["first_seen"]),
-                    # counters change; lifecycle state, ticket refs and throttle
-                    # anchors are DB truth
-                    "state": WorkState(row["state"]),
-                    "ticket_issue_id": row["ticket_issue_id"],
-                    "ticket_url": row["ticket_url"],
-                    "commented_at_occurrences": int(row["commented_at_occurrences"]),
-                    "last_comment_at": (
-                        _from_iso(row["last_comment_at"]) if row["last_comment_at"] else None
-                    ),
-                    "verification_started_at": (
-                        _from_iso(row["verification_started_at"])
-                        if row["verification_started_at"]
-                        else None
-                    ),
-                    "verification_start_occurrences": int(row["verification_start_occurrences"]),
-                    "chronic": bool(row["chronic"]),
-                    "proposal_issue_id": row["proposal_issue_id"],
-                    "proposal_url": row["proposal_url"],
-                    "proposal_branch": row["proposal_branch"],
-                }
-            )
+    def claim_event(self, event: LogEvent, fingerprint: Fingerprint) -> Fingerprint:
+        """Persist the event and count it once (see ABC docstring).
+
+        First caller: inserts the event, increments the fingerprint, and
+        sets ``counted`` in one transaction. Later callers of the same
+        event id get the merged DB-truth fingerprint with no second
+        increment — the policy re-runs (self-healing) but the count never
+        doubles.
+        """
+        with self._lock, self._conn:
             self._conn.execute(
-                "UPDATE fingerprints SET template=?, frames_json=?, severity=?, last_seen=?, "
-                "occurrences=? WHERE fp_hash=?",
+                "INSERT INTO log_events (id, ts, service, environment, severity, "
+                "message, source, trace_id, request_id, attributes_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO NOTHING",
                 (
-                    merged.template,
-                    json.dumps([frame.model_dump() for frame in merged.frames]),
-                    merged.severity.value,
-                    _iso(merged.last_seen),
-                    merged.occurrences,
-                    merged.fp_hash,
+                    event.id,
+                    _iso(event.ts),
+                    event.service,
+                    event.environment,
+                    event.severity.value,
+                    event.message,
+                    event.source,
+                    event.trace_id,
+                    event.request_id,
+                    json.dumps(event.attributes),
                 ),
             )
-            return merged
+            row = self._conn.execute(
+                "SELECT counted FROM log_events WHERE id = ?", (event.id,)
+            ).fetchone()
+            if row is not None and row["counted"]:
+                return self._record_occurrence_locked(fingerprint, 0)
+            stored = self._record_occurrence_locked(fingerprint, 1)
+            self._conn.execute(
+                "UPDATE log_events SET counted = 1, fp_hash = ? WHERE id = ?",
+                (fingerprint.fp_hash, event.id),
+            )
+            return stored
+
+    def count_fingerprint_events(
+        self, fingerprint: Fingerprint, since: datetime, until: datetime
+    ) -> int | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT SUM(CASE WHEN fp_hash = ? THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN fp_hash IS NULL THEN 1 ELSE 0 END) FROM log_events "
+                "WHERE service = ? AND environment = ? AND ts >= ? AND ts <= ?",
+                (
+                    fingerprint.fp_hash,
+                    fingerprint.service,
+                    fingerprint.environment,
+                    _iso(since),
+                    _iso(until),
+                ),
+            ).fetchone()
+        return None if row[1] else int(row[0] or 0)
+
+    def _record_occurrence_locked(self, incoming: Fingerprint, delta: int) -> Fingerprint:
+        """Occurrence upsert; caller holds the lock and the connection transaction."""
+        row = self._conn.execute(
+            "SELECT occurrences, first_seen, state, ticket_issue_id, ticket_url, "
+            "commented_at_occurrences, last_comment_at, verification_started_at, "
+            "verification_start_occurrences, chronic, proposal_issue_id, proposal_url, "
+            "proposal_branch, reserved_at, fix_commit_sha FROM fingerprints WHERE fp_hash = ?",
+            (incoming.fp_hash,),
+        ).fetchone()
+        if row is None:
+            stored = incoming.model_copy(update={"occurrences": incoming.occurrences + delta})
+            self._conn.execute(
+                "INSERT INTO fingerprints (fp_hash, service, environment, template, "
+                "frames_json, severity, first_seen, last_seen, occurrences, state, "
+                "ticket_issue_id, ticket_url, commented_at_occurrences, last_comment_at, "
+                "verification_started_at, verification_start_occurrences, chronic, "
+                "proposal_issue_id, proposal_url, proposal_branch, reserved_at, "
+                "fix_commit_sha) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                _fingerprint_params(stored),
+            )
+            return stored
+
+        merged = incoming.model_copy(
+            update={
+                "occurrences": int(row["occurrences"]) + delta,
+                "first_seen": _from_iso(row["first_seen"]),
+                # counters change; lifecycle state, ticket refs and throttle
+                # anchors are DB truth
+                "state": WorkState(row["state"]),
+                "ticket_issue_id": row["ticket_issue_id"],
+                "ticket_url": row["ticket_url"],
+                "commented_at_occurrences": int(row["commented_at_occurrences"]),
+                "last_comment_at": (
+                    _from_iso(row["last_comment_at"]) if row["last_comment_at"] else None
+                ),
+                "verification_started_at": (
+                    _from_iso(row["verification_started_at"])
+                    if row["verification_started_at"]
+                    else None
+                ),
+                "verification_start_occurrences": int(row["verification_start_occurrences"]),
+                "chronic": bool(row["chronic"]),
+                "proposal_issue_id": row["proposal_issue_id"],
+                "proposal_url": row["proposal_url"],
+                "proposal_branch": row["proposal_branch"],
+                "reserved_at": (_from_iso(row["reserved_at"]) if row["reserved_at"] else None),
+                "fix_commit_sha": row["fix_commit_sha"],
+            }
+        )
+        self._conn.execute(
+            "UPDATE fingerprints SET template=?, frames_json=?, severity=?, last_seen=?, "
+            "occurrences=? WHERE fp_hash=?",
+            (
+                merged.template,
+                json.dumps([frame.model_dump() for frame in merged.frames]),
+                merged.severity.value,
+                _iso(merged.last_seen),
+                merged.occurrences,
+                merged.fp_hash,
+            ),
+        )
+        return merged
 
     def get_fingerprint(self, fp_hash: str) -> Fingerprint | None:
         with self._lock:
@@ -595,8 +722,9 @@ class SQLiteStorage(Storage):
                 "frames_json, severity, first_seen, last_seen, occurrences, state, "
                 "ticket_issue_id, ticket_url, commented_at_occurrences, last_comment_at, "
                 "verification_started_at, verification_start_occurrences, chronic, "
-                "proposal_issue_id, proposal_url, proposal_branch) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "proposal_issue_id, proposal_url, proposal_branch, reserved_at, "
+                "fix_commit_sha) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(fp_hash) DO UPDATE SET template=excluded.template, "
                 "frames_json=excluded.frames_json, severity=excluded.severity, "
                 "last_seen=excluded.last_seen, occurrences=excluded.occurrences, "
@@ -609,7 +737,9 @@ class SQLiteStorage(Storage):
                 "chronic=excluded.chronic, "
                 "proposal_issue_id=excluded.proposal_issue_id, "
                 "proposal_url=excluded.proposal_url, "
-                "proposal_branch=excluded.proposal_branch",
+                "proposal_branch=excluded.proposal_branch, "
+                "reserved_at=excluded.reserved_at, "
+                "fix_commit_sha=excluded.fix_commit_sha",
                 _fingerprint_params(fingerprint),
             )
 
@@ -666,6 +796,15 @@ class SQLiteStorage(Storage):
     def mark_event_dispatched(self, event_id: str) -> None:
         with self._lock, self._conn:
             self._conn.execute("UPDATE log_events SET dispatched = 1 WHERE id = ?", (event_id,))
+
+    def count_events(self, service: str, environment: str, since: datetime, until: datetime) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM log_events WHERE service = ? AND environment = ? "
+                "AND ts >= ? AND ts <= ?",
+                (service, environment, _iso(since), _iso(until)),
+            ).fetchone()
+        return int(row[0])
 
     @staticmethod
     def _entry_hash(prev_hash: str | None, row_values: tuple[object, ...]) -> str:
@@ -928,6 +1067,12 @@ def _row_to_fingerprint(row: sqlite3.Row) -> Fingerprint:
         proposal_issue_id=row["proposal_issue_id"] if "proposal_issue_id" in columns else None,
         proposal_url=row["proposal_url"] if "proposal_url" in columns else None,
         proposal_branch=row["proposal_branch"] if "proposal_branch" in columns else None,
+        reserved_at=(
+            _from_iso(row["reserved_at"])
+            if "reserved_at" in columns and row["reserved_at"]
+            else None
+        ),
+        fix_commit_sha=row["fix_commit_sha"] if "fix_commit_sha" in columns else None,
     )
 
 
@@ -955,4 +1100,6 @@ def _fingerprint_params(
         fp.proposal_issue_id,
         fp.proposal_url,
         fp.proposal_branch,
+        _iso(fp.reserved_at) if fp.reserved_at else None,
+        fp.fix_commit_sha,
     )

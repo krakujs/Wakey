@@ -25,6 +25,13 @@ Prove whether a suggested fix actually fixed the error. Triggered when a wakey P
 
 ## State written
 
+Implementation note (2026-09-17): new log rows persist their exact fingerprint
+hash; the watcher counts only that fingerprint within the selected service,
+environment and observation window. Unrelated healthy or error logs cannot
+reopen it. If legacy rows in the window lack a fingerprint binding, the result
+stays inconclusive rather than guessing. SQLite migrates to schema 7;
+PostgreSQL to schema 3. Related-fingerprint matching remains P2.
+
 `tickets` (`verifying`, `closed-verified`, `reopened`), `fix_attempts.outcome`, fingerprint `chronic` flags, verdict metrics, `audit` (verdicts with evidence counts).
 
 ## Failure modes

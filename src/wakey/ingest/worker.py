@@ -1,21 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Durable delivery worker (WF-02 §7, R-02): pending → processed, exactly once.
+"""Durable delivery worker (WF-02 §7, R-02): recoverable at-least-once dispatch.
 
 The ingest route only *persists* a delivery (state ``pending``) and
 answers 202 — no parsing, forge calls, or model calls on the request
 path. This worker claims pending deliveries, parses, sanitizes every
-field (R-04), persists events, and dispatches the pipeline through a
-per-event dispatch journal: a crash anywhere leaves the delivery
-recoverable (startup resets stale ``processing`` rows; stored-but-
-undispatched events are re-dispatched, and the fingerprint state
-machine absorbs replays so retries never double-ticket). Bounded
-retries dead-letter at ``max_attempts``.
+field (R-04), persists events, and hands each to the pipeline, where the
+occurrence count and the dispatch journal commit atomically: a crash
+anywhere leaves the delivery recoverable (startup resets stale
+``processing`` rows; partially-processed deliveries replay without
+double-counting), and bounded retries dead-letter at ``max_attempts``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import Delivery
@@ -43,6 +43,11 @@ class DeliveryWorker:
         self._redactor = redactor
         self._metrics = metrics if metrics is not None else MetricsRegistry()
         self._max_attempts = max_attempts
+        self._handlers: dict[str, Callable[[Delivery], object]] = {}
+
+    def register_handler(self, service: str, handler: Callable[[Delivery], object]) -> None:
+        """Register a durable non-log delivery consumer before starting workers."""
+        self._handlers[service] = handler
 
     def process_next(self) -> bool:
         """Claim and process one pending delivery; True if one was handled."""
@@ -68,6 +73,11 @@ class DeliveryWorker:
         return True
 
     def _process(self, delivery: Delivery) -> None:
+        if delivery.service in self._handlers:
+            self._handlers[delivery.service](delivery)
+            return
+        if delivery.service.startswith("__"):
+            raise ValueError("no consumer registered for internal delivery")
         service = self._storage.get_service(delivery.service)
         environment = service.environment if service is not None else "prod"
         parsed = parse_events(
@@ -88,13 +98,10 @@ class DeliveryWorker:
             )
         for event in parsed.events:
             clean = sanitize_log_event(event, self._redactor)
-            fresh = self._storage.save_log_event(clean)
-            if fresh or not self._storage.is_event_dispatched(clean.id):
-                self._pipeline.handle_event(clean)
-                self._storage.mark_event_dispatched(clean.id)
-            # Dispatch journal (R-02): stored-but-undispatched events are
-            # re-dispatched on retry; the fingerprint state machine absorbs
-            # the replay so a retry can never double-ticket.
+            self._pipeline.handle_event(clean)
+            # Occurrence accounting is transactional. External forge effects
+            # remain at-least-once across a crash after remote success but
+            # before its local acknowledgement; do not claim exactly-once I/O.
 
 
 class DeliveryWorkerPool:
@@ -107,21 +114,27 @@ class DeliveryWorkerPool:
         self._count = count
         self._poll_seconds = poll_seconds
         self._tasks: list[asyncio.Task[None]] = []
+        self._stopping = False
 
     async def start(self) -> None:
         if self._tasks:
             return
+        self._stopping = False
 
         async def loop() -> None:
-            while True:
+            while not self._stopping:
                 processed = await asyncio.to_thread(self._worker.process_next)
                 if not processed:
                     await asyncio.sleep(self._poll_seconds)
 
         self._tasks = [asyncio.ensure_future(loop()) for _ in range(self._count)]
 
+    def register_handler(self, service: str, handler: Callable[[Delivery], object]) -> None:
+        self._worker.register_handler(service, handler)
+
     async def stop(self) -> None:
-        for task in self._tasks:
-            task.cancel()
+        # Cancelling to_thread abandons the waiter, not the thread. Drain its
+        # current delivery before the application closes the storage handle.
+        self._stopping = True
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []

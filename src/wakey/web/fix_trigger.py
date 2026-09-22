@@ -6,10 +6,8 @@ the FIX-1 eligibility gate evaluated against live state, a named outcome,
 and an audit line. The gate never half-applies — either every condition
 holds (and the fix executor runs) or the refusal names the failed check.
 
-P1 executor scope: patch generation (model proposer, E8-T5) and the
-capped-container sandbox gate (E8-T4) are not landed, so an eligible
-request is honestly blocked at the executor stage with those task IDs —
-the same convention the ``@wakey fix`` command uses (WF-07).
+The composed app injects the same executor used by GitHub commands.
+Without a configured executor this surface reports a named refusal.
 """
 
 from __future__ import annotations
@@ -19,6 +17,7 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from wakey.agents.fix import EligibilityInput, check_eligibility
+from wakey.agents.fix_executor import FixExecutor
 from wakey.agents.rca import RcaResult, classify
 from wakey.core.config import ServiceYaml
 from wakey.core.models import AuditEvent, Fingerprint, WorkState
@@ -26,8 +25,7 @@ from wakey.core.storage import Storage
 
 EXECUTOR_NOTE = (
     "Eligibility passed, but fix execution is not enabled on this instance yet: "
-    "the patch proposer is not built (E8-T5) and the sandbox container gate is "
-    "open (E8-T4). No state was changed."
+    "configure a model, repository binding and isolated test runner. No state was changed."
 )
 
 
@@ -66,12 +64,22 @@ def service_config(storage: Storage, service: str) -> ServiceYaml:
 
 
 def request_manual_fix(
-    storage: Storage, fp_hash: str, *, actor: str = "user:dashboard"
+    storage: Storage,
+    fp_hash: str,
+    *,
+    actor: str = "user:dashboard",
+    executor: FixExecutor | None = None,
 ) -> FixRequestOutcome:
     """Evaluate one human-requested fix attempt; audit and return the outcome."""
     fingerprint = storage.get_fingerprint(fp_hash)
     if fingerprint is None:
         return FixRequestOutcome(False, f"unknown fingerprint {fp_hash}")
+    if executor is not None:
+        result = executor.execute(
+            fingerprint, service_config(storage, fingerprint.service), human_requested=True
+        )
+        _audit(storage, actor, fp_hash, f"{result.stage}: {result.message}")
+        return FixRequestOutcome(result.stage == "delivered", result.message)
 
     rca = latest_rca(storage, fp_hash) or classify(fingerprint)
     rca_class, confidence, _summary = rca.classification, rca.confidence, rca.summary
@@ -87,6 +95,7 @@ def request_manual_fix(
             open_prs=open_prs,
             max_open_prs=config.max_open_prs,
             chronic=fingerprint.chronic,
+            human_requested=True,
         )
     )
     if not gate.allowed:

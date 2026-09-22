@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from wakey.agents.fix_executor import FixExecutionOutcome
 from wakey.agents.rca import RcaDispatcher
 from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import Fingerprint, Severity, WorkState
@@ -101,6 +102,27 @@ def test_fix_refusal_names_missing_capability(tmp_path: Path) -> None:
     dispatcher, _, _, _ = make_dispatcher(tmp_path)
     reply = dispatcher.handle_comment("alice", "42", "@wakey fix")
     assert reply is not None and "workspace" in reply
+
+
+def test_retry_passes_reviewer_feedback_to_executor(tmp_path: Path) -> None:
+    dispatcher, storage, forge, metrics = make_dispatcher(tmp_path)
+    seen: list[str] = []
+
+    def retry(fingerprint: Fingerprint, feedback: str) -> FixExecutionOutcome:
+        seen.append(feedback)
+        return FixExecutionOutcome("delivered", "updated", "https://example.test/pr/1")
+
+    dispatcher = CommandDispatcher(
+        storage,
+        forge,
+        RcaDispatcher(storage, forge),
+        authorized_users=frozenset({"alice"}),
+        metrics=metrics,
+        retry_executor=retry,
+    )
+    reply = dispatcher.handle_comment("alice", "42", "@wakey retry handle the None case")
+    assert reply == "updated"
+    assert seen == ["handle the None case"]
 
 
 def test_unknown_command_gets_helpful_reply(tmp_path: Path) -> None:

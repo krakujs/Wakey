@@ -30,12 +30,15 @@ def test_successful_completion_extracts_text() -> None:
                     {"type": "tool_use", "id": "t1"},
                     {"type": "text", "text": " CONFIDENCE: 0.8"},
                 ],
+                "usage": {"input_tokens": 17, "output_tokens": 9},
             },
         )
 
     reply = make_model(handler).complete("system", "prompt")
     assert reply.text == "CLASS: infra CONFIDENCE: 0.8"
     assert reply.data["model"] == "test-model"
+    assert reply.data["input_tokens"] == "17"
+    assert reply.data["output_tokens"] == "9"
 
 
 def test_http_error_returns_error_entry_not_raise() -> None:

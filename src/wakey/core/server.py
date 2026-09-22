@@ -10,6 +10,7 @@ present in production startup).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -23,10 +24,12 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from wakey.agents.fix_executor import FixExecutor
 from wakey.core.logging import REQUEST_ID, new_request_id
 from wakey.core.metrics import MetricsRegistry
 from wakey.core.models import AuditEvent, Delivery, DeployEvent, WorkState, utcnow
 from wakey.core.storage import Storage
+from wakey.forge.connect_client import ConnectForge
 from wakey.forge.port import ForgePort, TicketRef
 from wakey.ingest.oidc import JwtVerifier, OidcVerificationError, decode_pubsub_envelope
 from wakey.security.redaction import RedactionEngine
@@ -34,9 +37,10 @@ from wakey.security.secretbox import SecretBox
 from wakey.web.auth import SESSION_COOKIE, AuthManager
 from wakey.web.board import render_board_html
 from wakey.web.commands import CommandDispatcher
+from wakey.web.connect import register_connect_routes
 from wakey.web.fingerprints import render_fingerprint_html
 from wakey.web.fix_trigger import request_manual_fix
-from wakey.web.github_setup import register_github_app_routes
+from wakey.web.github_setup import SECRET_WEBHOOK_SLUG, register_github_app_routes
 from wakey.web.settings_page import render_settings_html
 from wakey.web.setup import register_setup_routes
 
@@ -58,6 +62,7 @@ def create_app(
     auth: AuthManager | None = None,
     commands: CommandDispatcher | None = None,
     secret_box: SecretBox | None = None,
+    fix_executor: FixExecutor | None = None,
 ) -> FastAPI:
     """Assemble the wakeyd HTTP app. One instance per process.
 
@@ -114,7 +119,15 @@ def create_app(
             return JSONResponse({"error": "authentication required"}, status_code=401)
         return Response(status_code=302, headers={"Location": "/login"})
 
-    register_auth_routes(app, auth_manager, metrics, secure_cookie=secure_cookie)
+    register_auth_routes(
+        app,
+        auth_manager,
+        metrics,
+        secure_cookie=secure_cookie,
+        landing="/",
+    )
+    connect = forge.connect if isinstance(forge, ConnectForge) else None
+    register_connect_routes(app, storage, connect, _admin_guard)
 
     register_core_routes(
         app,
@@ -123,8 +136,15 @@ def create_app(
         metrics=metrics,
         forge=forge,
         admin_guard=_admin_guard,
+        fix_executor=fix_executor,
     )
-    register_setup_routes(app, storage=storage, admin_guard=_admin_guard)
+    register_setup_routes(
+        app,
+        storage=storage,
+        admin_guard=_admin_guard,
+        connected_repo=connect.repository if connect else None,
+        base_url=settings.base_url,
+    )
     register_github_app_routes(
         app,
         settings=settings,
@@ -143,6 +163,8 @@ def create_app(
             metrics=metrics,
             forge=forge,
             commands=commands,
+            secret_box=secret_box,
+            runtime=runtime,
         )
     return app
 
@@ -314,6 +336,7 @@ def register_core_routes(
     metrics: MetricsRegistry,
     forge: ForgePort | None,
     admin_guard: Callable[[Request], Response | None],
+    fix_executor: FixExecutor | None = None,
 ) -> None:
     """Health/readiness plus the authed settings/board pages (WF-11, WF-12)."""
 
@@ -329,7 +352,12 @@ def register_core_routes(
 
     @app.get("/")
     def root() -> Response:
-        return Response(status_code=302, headers={"Location": "/board"})
+        target = (
+            "/board"
+            if storage.has_services()
+            else ("/connect" if isinstance(forge, ConnectForge) else "/setup")
+        )
+        return Response(status_code=302, headers={"Location": target})
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -404,7 +432,7 @@ def register_core_routes(
         if origin is not None and origin not in _same_origins(request):
             metrics.inc("wakey_fix_csrf_blocked_total", "cross-origin fix requests rejected")
             return JSONResponse({"error": "cross-origin request rejected"}, status_code=403)
-        outcome = request_manual_fix(storage, fp_hash)
+        outcome = request_manual_fix(storage, fp_hash, executor=fix_executor)
         location = "/fingerprints/{}?flash={}&flash_ok={}".format(
             urllib.parse.quote(fp_hash, safe=""),
             urllib.parse.quote(outcome.message, safe=""),
@@ -441,6 +469,7 @@ def register_auth_routes(
     metrics: MetricsRegistry,
     *,
     secure_cookie: bool,
+    landing: str = "/board",
 ) -> None:
     """Login/logout surface (WF-01 bootstrap admin, WF-12 §Auth, R-07).
 
@@ -463,7 +492,7 @@ def register_auth_routes(
             metrics.inc("wakey_login_failures_total", "failed dashboard logins")
             return JSONResponse({"error": "invalid or expired setup token"}, status_code=401)
         session_id = auth_manager.start_session()
-        response: Response = Response(status_code=302, headers={"Location": "/board"})
+        response: Response = Response(status_code=302, headers={"Location": landing})
         response.set_cookie(
             SESSION_COOKIE,
             session_id,
@@ -483,7 +512,7 @@ def register_auth_routes(
         return response
 
 
-def register_webhooks(
+def register_webhooks(  # noqa: PLR0915 — authenticated routes share secret resolution
     app: FastAPI,
     *,
     settings: Any,
@@ -491,44 +520,105 @@ def register_webhooks(
     metrics: MetricsRegistry,
     forge: ForgePort,
     commands: CommandDispatcher,
+    secret_box: SecretBox | None = None,
+    runtime: Any | None = None,
 ) -> None:
     """Webhook surface (WF-07 §1, WF-08 §1): HMAC-verified, dedup, typed routing.
 
     Routes are intentionally public (GitHub/CI cannot hold a dashboard
-    session); every request is HMAC-verified against WAKEY_WEBHOOK_SECRET
-    and deduplicated by delivery id. Without a configured secret the
-    surface refuses everything — fail closed.
+    session). Verification accepts both native GitHub signatures —
+    ``X-Hub-Signature-256`` against the connected GitHub App's webhook
+    secret — and self-hosted senders using ``X-Wakey-Signature`` against
+    WAKEY_WEBHOOK_SECRET. Delivery dedup keys off GitHub's
+    ``X-GitHub-Delivery`` (falling back to ``X-Delivery-Id``). Without any
+    configured secret the surface refuses everything — fail closed.
     """
 
+    deps = _WebhookDeps(storage, metrics, forge, commands)
+
+    def handle_delivery(delivery: Delivery) -> Response:
+        envelope = json.loads(delivery.payload)
+        if (
+            isinstance(forge, ConnectForge)
+            and envelope["event"].get("repository", {}).get("full_name")
+            != forge.connect.repository()
+        ):
+            raise ValueError("webhook repository does not match connected repository")
+        return _route_github_event(envelope["event"], envelope["kind"], deps)
+
+    if runtime is not None:
+        runtime.pool.register_handler("__webhook__", handle_delivery)
+
+    def _webhook_secrets() -> list[str]:
+        secrets: list[str] = []
+        env_secret = str(getattr(settings, "webhook_secret", "") or "")
+        if env_secret:
+            secrets.append(env_secret)
+        stored = storage.get_secret(SECRET_WEBHOOK_SLUG)
+        if stored and secret_box is not None:
+            try:
+                secrets.append(secret_box.decrypt(stored))
+            except Exception:  # noqa: BLE001 — an unreadable secret verifies nothing
+                logger.warning("stored GitHub App webhook secret could not be decrypted")
+        return secrets
+
     def _hmac_ok(request: Request, body: bytes) -> bool:
-        secret = getattr(settings, "webhook_secret", "")
-        if not secret:
+        secrets = _webhook_secrets()
+        if not secrets:
             return False  # fail closed: no secret configured, no acceptance
-        signature = request.headers.get("X-Wakey-Signature", "")
-        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        return hmac.compare_digest(f"sha256={expected}", signature)
+        signatures = [
+            request.headers.get("X-Hub-Signature-256", ""),  # native GitHub
+            request.headers.get("X-Wakey-Signature", ""),  # self-hosted senders
+        ]
+        for signature in signatures:
+            if not signature.startswith("sha256="):
+                continue
+            for secret in secrets:
+                expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+                if hmac.compare_digest(f"sha256={expected}", signature):
+                    return True
+        return False
 
     @app.post("/webhooks/github")
-    async def github_webhook(request: Request) -> Response:
+    async def github_webhook(request: Request) -> Response:  # noqa: PLR0911 — explicit HTTP errors
         body = await request.body()
+        if len(body) > MAX_INGEST_BODY_BYTES:
+            return JSONResponse({"error": "payload too large"}, status_code=413)
         if not _hmac_ok(request, body):
             metrics.inc("wakey_ingest_rejected_total", "ingest rejections", {"reason": "signature"})
             return JSONResponse({"error": "invalid signature"}, status_code=401)
 
-        delivery_id = request.headers.get("X-Delivery-Id") or new_request_id()
-        delivery = Delivery(service="__webhook__", delivery_id=delivery_id, payload="")
-        if not storage.save_delivery(delivery):
-            return JSONResponse({"deduplicated": True})
-        storage.complete_delivery("__webhook__", delivery_id)
-
+        delivery_id = (
+            request.headers.get("X-GitHub-Delivery")
+            or request.headers.get("X-Delivery-Id")
+            or new_request_id()
+        )
         try:
             event = json.loads(body.decode("utf-8", errors="replace"))
         except json.JSONDecodeError:
             return JSONResponse({"error": "invalid JSON"}, status_code=400)
         kind = request.headers.get("X-GitHub-Event", "")
-
-        deps = _WebhookDeps(storage, metrics, forge, commands)
-        return _route_github_event(request, event, kind, deps)
+        if not isinstance(event, dict):
+            return JSONResponse({"error": "expected JSON object"}, status_code=400)
+        payload, _ = app.state.redactor.redact(json.dumps({"event": event, "kind": kind}))
+        storage.save_delivery(
+            Delivery(service="__webhook__", delivery_id=delivery_id, payload=payload)
+        )
+        claimed = storage.claim_delivery("__webhook__", delivery_id)
+        if claimed is None:
+            return JSONResponse({"deduplicated": True})
+        try:
+            response = await asyncio.to_thread(handle_delivery, claimed)
+        except Exception:
+            storage.fail_delivery("__webhook__", delivery_id, max_attempts=5)
+            logger.exception("GitHub delivery failed; durable retry queued")
+            return JSONResponse(
+                {"error": "processing failed; retry queued"},
+                status_code=503,
+                headers={"Retry-After": "5"},
+            )
+        storage.complete_delivery("__webhook__", delivery_id)
+        return response
 
     @app.post("/webhooks/deploy")
     async def deploy_webhook(request: Request) -> Response:
@@ -544,19 +634,19 @@ def register_webhooks(
         service = storage.get_service(str(data.get("service", "")))
         if service is None:
             return JSONResponse({"error": "unknown service"}, status_code=404)
-        storage.save_deploy(
-            DeployEvent(
-                service=service.name,
-                environment=service.environment,
-                sha=str(data.get("sha", "unknown")),
-            )
-        )
+        # The payload's environment is authoritative (a CI pipeline deploys
+        # staging and prod independently); the service registration is only
+        # the default. Recording a staging deploy as prod would let an
+        # unrelated deploy mark production fingerprints verified (WF-08).
+        environment = str(data.get("environment", "")).strip() or service.environment
+        sha = str(data.get("sha", "unknown"))
+        storage.save_deploy(DeployEvent(service=service.name, environment=environment, sha=sha))
         storage.record_audit(
             AuditEvent(
                 actor="webhook",
                 action="deploy.record",
                 subject=service.name,
-                details={"sha": str(data.get("sha", "unknown"))},
+                details={"sha": sha, "environment": environment},
             )
         )
         metrics.inc("wakey_deployments_total", "deploy events recorded")
@@ -574,7 +664,6 @@ class _WebhookDeps:
 
 
 def _route_github_event(
-    request: Request,
     event: dict[str, Any],
     kind: str,
     deps: _WebhookDeps,
@@ -594,32 +683,73 @@ def _route_github_event(
             deps.forge.add_comment(ref, reply)
         return JSONResponse({"handled": reply is not None})
 
-    if kind == "pull_request" and event.get("action") == "closed":
-        pull = event.get("pull_request", {})
-        if not pull.get("merged"):
-            return JSONResponse({"handled": False})
-        head_ref = str(pull.get("head", {}).get("ref", ""))
-        fingerprint = _start_verification(deps.storage, deps.metrics, head_ref)
-        if fingerprint is None:
-            return JSONResponse({"handled": False})
-        if fingerprint.ticket_url:
-            deps.forge.add_comment(
-                TicketRef(
-                    issue_id=fingerprint.ticket_issue_id or fingerprint.fp_hash,
-                    url=fingerprint.ticket_url,
-                ),
-                f"Fix merged (`{str(pull.get('merge_commit_sha', ''))[:12]}`) — "
-                "verification window armed. I will confirm or reopen.",
-            )
-        return JSONResponse({"handled": True, "state": "verifying"})
+    if kind == "pull_request":
+        return _handle_merged_pull(event, deps)
+
+    if kind == "deployment_status":
+        return _handle_deployment_status(event, deps)
 
     return JSONResponse({"handled": False})
 
 
+def _handle_merged_pull(event: dict[str, Any], deps: _WebhookDeps) -> Response:
+    """A merged wakey PR arms the verification window (WF-08 §1)."""
+    pull = event.get("pull_request", {})
+    if event.get("action") != "closed" or not pull.get("merged"):
+        return JSONResponse({"handled": False})
+    head_ref = str(pull.get("head", {}).get("ref", ""))
+    merge_sha = str(pull.get("merge_commit_sha", "")) or None
+    fingerprint = _start_verification(deps.storage, deps.metrics, head_ref, merge_sha)
+    if fingerprint is None:
+        return JSONResponse({"handled": False})
+    if fingerprint.ticket_url:
+        deps.forge.add_comment(
+            TicketRef(
+                issue_id=fingerprint.ticket_issue_id or fingerprint.fp_hash,
+                url=fingerprint.ticket_url,
+            ),
+            f"Fix merged (`{str(pull.get('merge_commit_sha', ''))[:12]}`) — "
+            "verification window armed. I will confirm or reopen.",
+        )
+    return JSONResponse({"handled": True, "state": "verifying"})
+
+
+def _handle_deployment_status(event: dict[str, Any], deps: _WebhookDeps) -> Response:
+    """deployment_status → deploy record (WF-08), for the connected repo."""
+    status = event.get("deployment_status", {})
+    if event.get("action") != "created" or str(status.get("state", "")) != "success":
+        return JSONResponse({"handled": False})
+    full_name = str(event.get("repository", {}).get("full_name", ""))
+    service = next((s for s in deps.storage.list_services() if s.repo == full_name), None)
+    if service is None:
+        return JSONResponse({"handled": False})
+    deployment = event.get("deployment", {})
+    sha = str(deployment.get("sha", "unknown"))
+    # Same contract as /webhooks/deploy: the payload's environment is
+    # authoritative (WF-08) — a staging deploy must never verify prod.
+    environment = str(deployment.get("environment", "")).strip() or service.environment
+    deps.storage.save_deploy(DeployEvent(service=service.name, environment=environment, sha=sha))
+    deps.storage.record_audit(
+        AuditEvent(
+            actor="webhook",
+            action="deploy.record",
+            subject=service.name,
+            details={"sha": sha, "environment": environment, "source": "deployment_status"},
+        )
+    )
+    deps.metrics.inc("wakey_deployments_total", "deploy events recorded")
+    return JSONResponse({"handled": True, "recorded": True})
+
+
 def _start_verification(
-    storage: Storage, metrics: MetricsRegistry, proposal_branch: str
+    storage: Storage, metrics: MetricsRegistry, proposal_branch: str, fix_commit_sha: str | None
 ) -> Any | None:
-    """WF-08 §1: bind a merged wakey PR → fingerprint enters ``verifying``."""
+    """WF-08 §1: bind a merged wakey PR → fingerprint enters ``verifying``.
+
+    The merge commit is bound to the fingerprint so verification only
+    counts deployments that actually carry the fix — a deploy of anything
+    else must never mark the fix as shipped.
+    """
     fingerprint = storage.get_fingerprint_by_branch(proposal_branch)
     if fingerprint is None or fingerprint.state is WorkState.VERIFYING:
         return None
@@ -629,6 +759,7 @@ def _start_verification(
             "state": WorkState.VERIFYING,
             "verification_started_at": now,
             "verification_start_occurrences": fingerprint.occurrences,
+            "fix_commit_sha": fix_commit_sha or fingerprint.fix_commit_sha,
         }
     )
     storage.save_fingerprint(updated)
