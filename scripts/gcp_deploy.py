@@ -274,7 +274,7 @@ def load_env_pairs(
     # start from the process environment so CI-exported WAKEY_* secrets
     # flow through, then overlay the optional .env file
     pairs = {k: v for k, v in environ.items() if k.startswith("WAKEY_")}
-    for raw_line in path.read_text().splitlines():
+    for raw_line in path.read_text().splitlines() if path.exists() else ():
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
