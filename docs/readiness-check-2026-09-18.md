@@ -287,10 +287,11 @@ four-worker PostgreSQL run each pass 491 tests with 10 skips (91.12% overall,
 isolation, restore/alert/key-rotation drills and the real incident-to-observation
 acceptance loop remain external launch evidence, not local code gaps.
 
-The reviewed connector image was subsequently published and deployed by digest
-`sha256:9384366345f21e91fa6575caf61467b949a0c6a56da9ae4a197e615c0d98c4ea`
-to broker revision `wakey-connect-00003-25l` and inbox revision
-`wakey-connect-inbox-00003-qg2`. Public root liveness is 200, the Monitoring
+Source commit `aaa21f08821191802ff489230d9ac40010939eaf` passed GitHub CI.
+The committed connector image was published and deployed by digest
+`sha256:ec0eb347fa89e4dacf0e0762663bb16c246e7249790f32e4b5e3e1868cf39e7d`
+to broker revision `wakey-connect-00004-hl2` and inbox revision
+`wakey-connect-inbox-00004-stk`. Public root liveness is 200, the Monitoring
 check now targets that route, and the non-destructive private live probe passes.
 
 1. ~~Founder (sudo): App settings → add `deployments` (read) permission +

@@ -7,11 +7,12 @@ not product certification. These resources incur ongoing Google Cloud charges.
 
 ## Cutover checkpoint — 2026-09-18 (webhook routing live, permissions granted)
 
-### 2026-09-22 reviewed update
+### 2026-09-23 committed deployment update
 
-- Broker revision `wakey-connect-00003-25l` and inbox revision
-  `wakey-connect-inbox-00003-qg2` run immutable image
-  `sha256:9384366345f21e91fa6575caf61467b949a0c6a56da9ae4a197e615c0d98c4ea`.
+- Source commit `aaa21f08821191802ff489230d9ac40010939eaf` passed GitHub CI.
+- Broker revision `wakey-connect-00004-hl2` and inbox revision
+  `wakey-connect-inbox-00004-stk` run immutable image
+  `sha256:ec0eb347fa89e4dacf0e0762663bb16c246e7249790f32e4b5e3e1868cf39e7d`.
 - The image passed the same Python dependency audit as CI (no known
   vulnerabilities; the local Wakey package is outside PyPI advisory matching).
 - Public inbox `/` returns `{"status":"ok"}` and the Monitoring uptime check
