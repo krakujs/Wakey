@@ -1,6 +1,6 @@
 # Wakey server image — non-root, slim, ≤200MB target (NFR-6).
 # Multi-arch (amd64+arm64) builds come with the E1-T4 release workflow.
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
