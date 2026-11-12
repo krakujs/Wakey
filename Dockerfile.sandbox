@@ -2,7 +2,7 @@
 # Image for the E10-T2 sandbox gate (make gate-sandbox): wakey + pytest only.
 # The container's controls (no network, memory/CPU/pids caps) are applied by
 # the `docker run` invocation in the Makefile, not by this image.
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

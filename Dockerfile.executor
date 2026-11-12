@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Isolated executor image. The Docker client talks only to the restricted
 # socket proxy from deploy/compose.fixer.yml; no daemon runs in this image.
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
